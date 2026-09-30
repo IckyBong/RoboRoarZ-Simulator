@@ -1,0 +1,520 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Smorphi RoboRoarZ Simulator - Autonomous Robotics & Morphing Platform</title>
+
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#ecfeff',
+              100: '#cffafe',
+              400: '#22d3ee',
+              500: '#06b6d4',
+              600: '#0891b2',
+            }
+          }
+        }
+      }
+    }
+  </script>
+
+  <!-- Google Fonts & Custom CSS -->
+  <link rel="stylesheet" href="css/style.css">
+
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+
+  <!-- Three.js & OrbitControls CDN -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+
+  <!-- Ace Editor CDN (Rock solid for online & offline file:// execution) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/ace/1.32.7/ace.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/ace/1.32.7/mode-javascript.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/ace/1.32.7/theme-monokai.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/ace/1.32.7/ext-language_tools.min.js"></script>
+</head>
+<body class="bg-slate-950 text-slate-100 flex flex-col h-screen select-none overflow-hidden">
+
+  <!-- TOP HEADER / CONTROL BAR -->
+  <header class="bg-slate-900/90 border-b border-slate-800 px-4 py-2.5 flex items-center justify-between z-20 shrink-0">
+    <div class="flex items-center space-x-3">
+      <div class="w-9 h-9 rounded-lg bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center shadow-lg shadow-cyan-500/20">
+        <i data-lucide="bot" class="w-5 h-5 text-white"></i>
+      </div>
+      <div>
+        <div class="flex items-center space-x-2">
+          <h1 class="text-sm font-bold tracking-wider text-white">SMORPHI ROBOROARZ SIMULATOR</h1>
+          <span class="px-1.5 py-0.5 text-[10px] font-mono bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 rounded">v2.4 AUTONOMOUS</span>
+        </div>
+        <p class="text-[11px] text-slate-400">Reconfigurable Modular Robot Platform &bull; 16-Mecanum Holonomic Kinematics</p>
+      </div>
+    </div>
+
+    <!-- Center Status & Quick Actions -->
+    <div class="flex items-center space-x-3">
+      <!-- State Indicator -->
+      <div id="sim-status-mode" class="px-2.5 py-1 text-xs font-mono font-bold rounded-md bg-slate-800 text-slate-400 border border-slate-700">
+        IDLE
+      </div>
+
+      <!-- Action Buttons -->
+      <button id="btn-run-code" class="flex items-center space-x-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-md text-xs font-semibold shadow-md shadow-emerald-900/40 transition-all active:scale-95">
+        <i data-lucide="play" class="w-3.5 h-3.5"></i>
+        <span>Run Code</span>
+      </button>
+
+      <button id="btn-stop-code" class="flex items-center space-x-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-md text-xs font-medium transition-all active:scale-95">
+        <i data-lucide="square" class="w-3.5 h-3.5 text-red-400"></i>
+        <span>Stop</span>
+      </button>
+
+      <div class="h-5 w-px bg-slate-800"></div>
+
+      <button id="btn-new-map" class="flex items-center space-x-1.5 px-3 py-1.5 bg-cyan-600 hover:bg-cyan-500 text-white rounded-md text-xs font-medium shadow-md shadow-cyan-900/30 transition-all active:scale-95">
+        <i data-lucide="shuffle" class="w-3.5 h-3.5"></i>
+        <span>New Map</span>
+      </button>
+
+      <button id="btn-reset-robot" class="flex items-center space-x-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-md text-xs font-medium transition-all active:scale-95" title="Reset Pose to Spawn">
+        <i data-lucide="rotate-ccw" class="w-3.5 h-3.5"></i>
+        <span>Reset</span>
+      </button>
+    </div>
+
+    <!-- Right Telemetry Badges -->
+    <div class="flex items-center space-x-4">
+      <div class="flex items-center space-x-2 text-xs font-mono">
+        <span class="text-slate-400">FPS:</span>
+        <span id="sim-fps" class="text-cyan-400 font-bold">60 FPS</span>
+      </div>
+      <div class="flex items-center space-x-1.5 px-2.5 py-1 rounded bg-slate-800/80 border border-slate-700/80 text-xs">
+        <span class="text-slate-400">Hits:</span>
+        <span id="collision-count" class="font-mono text-red-400 font-bold">0</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- MAIN SIMULATOR WORKSPACE -->
+  <main class="flex-1 flex overflow-hidden relative">
+
+    <!-- LEFT: 3D / 2D SIMULATION VIEWPORT (60% to 65% width) -->
+    <div class="flex-1 relative flex flex-col bg-slate-950 overflow-hidden">
+      <!-- 3D Canvas Container -->
+      <div id="viewport-3d" class="w-full h-full relative cursor-grab active:cursor-grabbing"></div>
+
+      <!-- Top Overlay: Camera & View Toggles -->
+      <div class="absolute top-3 left-3 flex items-center space-x-2 bg-slate-900/90 backdrop-blur-md px-3 py-1.5 rounded-lg border border-slate-800/90 shadow-lg z-10">
+        <span class="text-[11px] font-semibold text-slate-400 mr-1 flex items-center gap-1">
+          <i data-lucide="video" class="w-3 h-3 text-cyan-400"></i> View:
+        </span>
+        <button data-cam-mode="perspective" class="px-2.5 py-1 text-xs rounded font-medium bg-cyan-500 text-white transition-all shadow-sm">
+          3D Orbit
+        </button>
+        <button data-cam-mode="topdown" class="px-2.5 py-1 text-xs rounded font-medium bg-slate-800 hover:bg-slate-700 text-slate-300 transition-all">
+          2D Top-Down
+        </button>
+        <button data-cam-mode="follow" class="px-2.5 py-1 text-xs rounded font-medium bg-slate-800 hover:bg-slate-700 text-slate-300 transition-all">
+          Follow Cam
+        </button>
+
+        <div class="h-4 w-px bg-slate-700 mx-1"></div>
+
+        <!-- Layer Toggles -->
+        <label class="flex items-center space-x-1 text-xs text-slate-300 cursor-pointer hover:text-white">
+          <input type="checkbox" id="toggle-lidar-beams" checked class="rounded bg-slate-800 border-slate-700 text-cyan-500 focus:ring-0">
+          <span class="text-[11px]">LiDAR Rays</span>
+        </label>
+        <label class="flex items-center space-x-1 text-xs text-slate-300 cursor-pointer hover:text-white">
+          <input type="checkbox" id="toggle-trajectory-trail" checked class="rounded bg-slate-800 border-slate-700 text-cyan-500 focus:ring-0">
+          <span class="text-[11px]">Trail</span>
+        </label>
+        <label class="flex items-center space-x-1 text-xs text-slate-300 cursor-pointer hover:text-white">
+          <input type="checkbox" id="toggle-audio-sfx" checked class="rounded bg-slate-800 border-slate-700 text-cyan-500 focus:ring-0">
+          <span class="text-[11px]">SFX</span>
+        </label>
+      </div>
+
+      <!-- Top Right Overlay: Active Shape Badge -->
+      <div class="absolute top-3 right-3 z-10 flex items-center space-x-2 bg-slate-900/90 backdrop-blur-md px-3 py-1.5 rounded-lg border border-slate-800/90 shadow-lg">
+        <span class="text-xs text-slate-400">Morphology:</span>
+        <span id="active-shape-badge" class="px-2.5 py-1 text-xs font-mono font-bold rounded-md bg-cyan-500/20 text-cyan-400 border border-cyan-500/40">
+          SHAPE: O
+        </span>
+      </div>
+
+      <!-- Bottom Overlay: Simulation Control & Quick Shape Palette -->
+      <div class="absolute bottom-3 left-3 right-3 flex items-center justify-between pointer-events-none z-10">
+        <!-- Left: Sim Rate & Step -->
+        <div class="flex items-center space-x-2 bg-slate-900/90 backdrop-blur-md px-3 py-2 rounded-lg border border-slate-800/90 shadow-lg pointer-events-auto">
+          <button id="btn-sim-play-pause" class="flex items-center space-x-1 px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded text-xs">
+            <i data-lucide="pause" class="w-3.5 h-3.5"></i>
+            <span>Pause</span>
+          </button>
+          <button id="btn-sim-step" class="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded text-xs" title="Step 1 Frame">
+            <i data-lucide="step-forward" class="w-3.5 h-3.5"></i>
+          </button>
+
+          <span class="text-[11px] text-slate-400 ml-1">Speed:</span>
+          <select id="sim-speed-select" class="bg-slate-800 text-slate-200 text-xs rounded px-1.5 py-1 border border-slate-700 focus:outline-none">
+            <option value="0.5">0.5x</option>
+            <option value="1.0" selected>1.0x (Realtime)</option>
+            <option value="2.0">2.0x (Fast)</option>
+            <option value="5.0">5.0x (Turbo)</option>
+          </select>
+
+          <div class="h-4 w-px bg-slate-700 mx-1"></div>
+
+          <button id="btn-manual-teleop" class="flex items-center space-x-1 px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-amber-300 rounded text-xs transition-all" title="Toggle Keyboard Control">
+            <i data-lucide="gamepad-2" class="w-3.5 h-3.5"></i>
+            <span>Manual (WASD+QE)</span>
+          </button>
+        </div>
+
+        <!-- Right: Instant Shape Shift Palette (7 Tetrominoes) -->
+        <div class="flex items-center space-x-1.5 bg-slate-900/90 backdrop-blur-md px-3 py-2 rounded-lg border border-slate-800/90 shadow-lg pointer-events-auto">
+          <span class="text-[11px] font-semibold text-slate-400 mr-1">Morph Shape:</span>
+          <button data-shape-target="I" class="w-7 h-7 text-xs font-mono font-bold bg-slate-800 hover:bg-cyan-600 rounded text-slate-200 hover:text-white border border-slate-700 transition-all" title="Straight Line 1x4 (Narrow Corridor)">I</button>
+          <button data-shape-target="O" class="w-7 h-7 text-xs font-mono font-bold bg-slate-800 hover:bg-cyan-600 rounded text-slate-200 hover:text-white border border-slate-700 transition-all" title="Square 2x2 (Standard)">O</button>
+          <button data-shape-target="L" class="w-7 h-7 text-xs font-mono font-bold bg-slate-800 hover:bg-cyan-600 rounded text-slate-200 hover:text-white border border-slate-700 transition-all" title="L-Shape">L</button>
+          <button data-shape-target="T" class="w-7 h-7 text-xs font-mono font-bold bg-slate-800 hover:bg-cyan-600 rounded text-slate-200 hover:text-white border border-slate-700 transition-all" title="T-Shape">T</button>
+          <button data-shape-target="Z" class="w-7 h-7 text-xs font-mono font-bold bg-slate-800 hover:bg-cyan-600 rounded text-slate-200 hover:text-white border border-slate-700 transition-all" title="Z-Shape">Z</button>
+          <button data-shape-target="S" class="w-7 h-7 text-xs font-mono font-bold bg-slate-800 hover:bg-cyan-600 rounded text-slate-200 hover:text-white border border-slate-700 transition-all" title="S-Shape">S</button>
+          <button data-shape-target="J" class="w-7 h-7 text-xs font-mono font-bold bg-slate-800 hover:bg-cyan-600 rounded text-slate-200 hover:text-white border border-slate-700 transition-all" title="J-Shape">J</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- RIGHT: DASHBOARD PANEL (TABS: CODE EDITOR, TELEMETRY, CONFIG) (35% to 40% width) -->
+    <div class="w-[460px] max-w-[500px] bg-slate-900 border-l border-slate-800 flex flex-col shrink-0 z-10 shadow-2xl">
+      <!-- Panel Tab Headers -->
+      <div class="flex items-center border-b border-slate-800 bg-slate-950/70 px-2 pt-1 shrink-0">
+        <button id="tab-btn-code" class="tab-btn active px-4 py-2 text-xs font-semibold flex items-center space-x-1.5 transition-all" onclick="switchPanelTab('code')">
+          <i data-lucide="code" class="w-4 h-4"></i>
+          <span>Code Editor</span>
+        </button>
+        <button id="tab-btn-telemetry" class="tab-btn px-4 py-2 text-xs font-semibold text-slate-400 hover:text-slate-200 flex items-center space-x-1.5 transition-all" onclick="switchPanelTab('telemetry')">
+          <i data-lucide="radar" class="w-4 h-4"></i>
+          <span>Telemetry & Radar</span>
+        </button>
+        <button id="tab-btn-config" class="tab-btn px-4 py-2 text-xs font-semibold text-slate-400 hover:text-slate-200 flex items-center space-x-1.5 transition-all" onclick="switchPanelTab('config')">
+          <i data-lucide="sliders" class="w-4 h-4"></i>
+          <span>Arena & Docs</span>
+        </button>
+      </div>
+
+      <!-- TAB 1: INTERACTIVE CODE EDITOR -->
+      <div id="tab-content-code" class="flex-1 flex flex-col overflow-hidden">
+        <!-- Editor Toolbar -->
+        <div class="px-3 py-2 bg-slate-900/90 border-b border-slate-800 flex items-center justify-between text-xs shrink-0">
+          <div class="flex items-center space-x-2">
+            <span class="text-slate-400">Template:</span>
+            <select id="code-preset-select" class="bg-slate-800 text-cyan-400 font-medium text-xs rounded px-2 py-1 border border-slate-700 focus:outline-none focus:border-cyan-500">
+              <option value="default_avoidance">Autonomous Avoidance & Morphing (Default)</option>
+              <option value="goal_seeker">RoboRoarZ Goal Seeker (Potential Field)</option>
+              <option value="holonomic_drift">Mecanum Holonomic Orbit (No-Turn)</option>
+              <option value="wall_follower">PID Wall Follower</option>
+            </select>
+          </div>
+          <button id="btn-reset-code" class="text-slate-400 hover:text-slate-200 hover:underline text-[11px]" title="Reset to template">
+            Reset
+          </button>
+        </div>
+
+        <!-- Monaco / Ace Code Editor Surface -->
+        <div class="flex-1 relative">
+          <div id="code-editor" class="absolute inset-0"></div>
+        </div>
+
+        <!-- Bottom Console / Logs Window -->
+        <div class="h-44 bg-slate-950 border-t border-slate-800 flex flex-col shrink-0">
+          <div class="px-3 py-1.5 bg-slate-900/80 border-b border-slate-800/80 flex items-center justify-between text-[11px] shrink-0">
+            <div class="flex items-center space-x-2 text-slate-300 font-semibold">
+              <i data-lucide="terminal" class="w-3.5 h-3.5 text-cyan-400"></i>
+              <span>Simulator Console</span>
+            </div>
+            <button id="btn-clear-console" class="text-slate-500 hover:text-slate-300">
+              Clear
+            </button>
+          </div>
+          <div id="console-logs" class="flex-1 p-2.5 overflow-y-auto space-y-1 font-mono text-xs">
+            <div class="text-slate-500 text-[11px]">System ready. Click [Run Code] to start autonomous control loop.</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- TAB 2: REAL-TIME TELEMETRY & RADAR -->
+      <div id="tab-content-telemetry" class="flex-1 overflow-y-auto p-4 space-y-4 hidden">
+        <!-- 360 LiDAR Polar Radar Canvas -->
+        <div class="bg-slate-950 p-3.5 rounded-xl border border-slate-800 flex flex-col items-center">
+          <div class="w-full flex items-center justify-between mb-2">
+            <span class="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
+              <i data-lucide="radar" class="w-3.5 h-3.5 text-cyan-400"></i> 2D LiDAR Polar Radar (360°)
+            </span>
+            <span class="text-[10px] font-mono text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20">360 BEAMS</span>
+          </div>
+
+          <!-- Radar Viewport -->
+          <div class="relative w-[260px] h-[260px] rounded-full overflow-hidden bg-[#090d16] border border-cyan-500/30 flex items-center justify-center">
+            <canvas id="lidar-radar-canvas" class="w-full h-full"></canvas>
+          </div>
+          <div class="w-full flex items-center justify-around mt-2 text-[10px] text-slate-400 font-mono">
+            <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-red-500"></span> &lt;0.6m Danger</span>
+            <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-amber-500"></span> &lt;1.2m Caution</span>
+            <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-cyan-500"></span> &gt;1.2m Clear</span>
+          </div>
+        </div>
+
+        <!-- 6-DOF IMU & Compass Section -->
+        <div class="bg-slate-950 p-3.5 rounded-xl border border-slate-800">
+          <div class="flex items-center justify-between mb-3">
+            <span class="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
+              <i data-lucide="compass" class="w-3.5 h-3.5 text-blue-400"></i> 6-DOF IMU Orientation
+            </span>
+            <span class="text-[10px] font-mono text-slate-400">50 Hz</span>
+          </div>
+
+          <div class="grid grid-cols-2 gap-3 items-center">
+            <!-- Compass Dial -->
+            <div class="flex flex-col items-center justify-center">
+              <div class="relative w-24 h-24 rounded-full border-2 border-slate-700 bg-slate-900 flex items-center justify-center">
+                <span class="absolute top-1 text-[9px] font-bold text-slate-400">N</span>
+                <span class="absolute right-1 text-[9px] font-bold text-slate-500">E</span>
+                <span class="absolute bottom-1 text-[9px] font-bold text-slate-500">S</span>
+                <span class="absolute left-1 text-[9px] font-bold text-slate-500">W</span>
+
+                <!-- Compass Needle -->
+                <div id="compass-needle" class="w-full h-full absolute inset-0 flex items-center justify-center">
+                  <div class="w-1 h-16 relative">
+                    <div class="w-1.5 h-8 bg-red-500 rounded-t-sm shadow-sm shadow-red-500/50"></div>
+                    <div class="w-1.5 h-8 bg-slate-400 rounded-b-sm"></div>
+                  </div>
+                </div>
+
+                <div class="w-3 h-3 rounded-full bg-slate-900 border-2 border-white z-10"></div>
+              </div>
+            </div>
+
+            <!-- Digital IMU Telemetry -->
+            <div class="space-y-2 text-xs font-mono">
+              <div class="bg-slate-900 p-2 rounded border border-slate-800">
+                <div class="text-[10px] text-slate-400">HEADING (YAW):</div>
+                <div id="telemetry-heading" class="text-cyan-400 font-bold text-sm">0.0°</div>
+                <div id="telemetry-heading-rad" class="text-slate-500 text-[10px]">0.00 rad</div>
+              </div>
+              <div class="bg-slate-900 p-2 rounded border border-slate-800">
+                <div class="text-[10px] text-slate-400">YAW RATE (ω):</div>
+                <div id="telemetry-yaw-rate" class="text-emerald-400 font-bold text-sm">0.0°/s</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Holonomic Mecanum Velocities (Vx, Vy, Omega) -->
+        <div class="bg-slate-950 p-3.5 rounded-xl border border-slate-800 space-y-2.5">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
+              <i data-lucide="gauge" class="w-3.5 h-3.5 text-purple-400"></i> Kinematics Velocities (3-DOF)
+            </span>
+            <span class="text-[10px] font-mono text-slate-400">16 Wheels</span>
+          </div>
+
+          <!-- Vx -->
+          <div>
+            <div class="flex justify-between text-[11px] mb-1">
+              <span class="text-slate-400">Vx (Forward / Reverse):</span>
+              <span id="vx-val" class="font-mono text-cyan-400 font-semibold">+0.00 m/s</span>
+            </div>
+            <div class="w-full h-2 bg-slate-900 rounded-full overflow-hidden border border-slate-800">
+              <div id="vx-bar" class="h-full bg-cyan-500 rounded-full transition-all" style="width: 0%"></div>
+            </div>
+          </div>
+
+          <!-- Vy -->
+          <div>
+            <div class="flex justify-between text-[11px] mb-1">
+              <span class="text-slate-400">Vy (Lateral Crab Strafe):</span>
+              <span id="vy-val" class="font-mono text-purple-400 font-semibold">+0.00 m/s</span>
+            </div>
+            <div class="w-full h-2 bg-slate-900 rounded-full overflow-hidden border border-slate-800">
+              <div id="vy-bar" class="h-full bg-purple-500 rounded-full transition-all" style="width: 0%"></div>
+            </div>
+          </div>
+
+          <!-- Omega -->
+          <div>
+            <div class="flex justify-between text-[11px] mb-1">
+              <span class="text-slate-400">Omega (Angular Rotation):</span>
+              <span id="omega-val" class="font-mono text-emerald-400 font-semibold">+0.00 rad/s</span>
+            </div>
+            <div class="w-full h-2 bg-slate-900 rounded-full overflow-hidden border border-slate-800">
+              <div id="omega-bar" class="h-full bg-emerald-500 rounded-full transition-all" style="width: 0%"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Global Odometry & Goal Distance -->
+        <div class="bg-slate-950 p-3.5 rounded-xl border border-slate-800">
+          <span class="text-xs font-semibold text-slate-300 flex items-center gap-1.5 mb-2">
+            <i data-lucide="map-pin" class="w-3.5 h-3.5 text-amber-400"></i> Global Odometry & Target
+          </span>
+          <div class="grid grid-cols-2 gap-2 text-xs font-mono">
+            <div class="bg-slate-900 p-2 rounded border border-slate-800">
+              <span class="text-[10px] text-slate-400 block">Pose (X, Y):</span>
+              <span class="text-slate-200"><span id="pose-x">0.80 m</span>, <span id="pose-y">0.80 m</span></span>
+            </div>
+            <div class="bg-slate-900 p-2 rounded border border-slate-800">
+              <span class="text-[10px] text-slate-400 block">Heading (θ):</span>
+              <span id="pose-theta" class="text-slate-200">0°</span>
+            </div>
+            <div class="bg-slate-900 p-2 rounded border border-slate-800 col-span-2 flex justify-between items-center">
+              <div>
+                <span class="text-[10px] text-slate-400 block">Distance to Goal:</span>
+                <span id="dist-goal" class="text-amber-400 font-bold text-sm">4.80 m</span>
+              </div>
+              <div id="shape-preview-grid"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- TAB 3: ARENA CONFIG & API DOCS -->
+      <div id="tab-content-config" class="flex-1 overflow-y-auto p-4 space-y-4 hidden">
+        <!-- Randomized Map Generator Config -->
+        <div class="bg-slate-950 p-3.5 rounded-xl border border-slate-800 space-y-3">
+          <span class="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
+            <i data-lucide="layers" class="w-3.5 h-3.5 text-cyan-400"></i> Randomized Map Generator
+          </span>
+          <p class="text-xs text-slate-400 leading-relaxed">
+            Menghasilkan peta acak dengan rintangan statis (kotak, pilar) dan lorong sempit khusus pengujian bentuk morfologi Smorphi.
+          </p>
+
+          <div class="space-y-1.5">
+            <label class="text-[11px] text-slate-300 font-medium">Kepadatan Rintangan (Obstacle Density):</label>
+            <select id="map-density-select" class="w-full bg-slate-900 text-slate-200 text-xs rounded p-2 border border-slate-700 focus:outline-none focus:border-cyan-500">
+              <option value="LOW">7.5% - Kepadatan Rendah (Training Ground)</option>
+              <option value="MEDIUM" selected>15.0% - RoboRoarZ Standar (Pilar + Lorong Sempit)</option>
+              <option value="HIGH">28.0% - Kepadatan Tinggi (Dense Maze &amp; Chokepoints)</option>
+            </select>
+          </div>
+
+          <div class="p-2.5 bg-cyan-950/30 rounded border border-cyan-500/20 text-[11px] text-cyan-300 flex items-start gap-2">
+            <i data-lucide="info" class="w-4 h-4 shrink-0 mt-0.5"></i>
+            <span>Validasi Peta otomatis (BFS Search) memastikan selalu ada jalur yang dapat dilalui dari spawn ke target.</span>
+          </div>
+        </div>
+
+        <!-- Robot Smorphi Physical Specs Card -->
+        <div class="bg-slate-950 p-3.5 rounded-xl border border-slate-800 space-y-2 text-xs">
+          <span class="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
+            <i data-lucide="cpu" class="w-3.5 h-3.5 text-pink-400"></i> Spesifikasi Teknis Smorphi
+          </span>
+          <div class="space-y-1 text-slate-400 text-[11px]">
+            <div class="flex justify-between py-1 border-b border-slate-800/60">
+              <span>Modular Structure:</span>
+              <span class="text-slate-200 font-mono">4 Blok (16×16×16 cm)</span>
+            </div>
+            <div class="flex justify-between py-1 border-b border-slate-800/60">
+              <span>Massa Total:</span>
+              <span class="text-slate-200 font-mono">2.0 kg (500g / blok)</span>
+            </div>
+            <div class="flex justify-between py-1 border-b border-slate-800/60">
+              <span>Konfigurasi Engsel:</span>
+              <span class="text-slate-200 font-mono">3 Engsel Motorized (LLR)</span>
+            </div>
+            <div class="flex justify-between py-1 border-b border-slate-800/60">
+              <span>Morfologi Bentuk:</span>
+              <span class="text-slate-200 font-mono">7 Bentuk (I, O, L, T, Z, S, J)</span>
+            </div>
+            <div class="flex justify-between py-1 border-b border-slate-800/60">
+              <span>Kinematika Roda:</span>
+              <span class="text-slate-200 font-mono">16 Roda Mecanum (3-DOF)</span>
+            </div>
+            <div class="flex justify-between py-1">
+              <span>LiDAR Emulation:</span>
+              <span class="text-slate-200 font-mono">2D 360° (0.05 - 5.0m)</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- API Reference Cheatsheet -->
+        <div class="bg-slate-950 p-3.5 rounded-xl border border-slate-800 space-y-2 text-xs">
+          <span class="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
+            <i data-lucide="book-open" class="w-3.5 h-3.5 text-emerald-400"></i> API Referensi Script
+          </span>
+          <div class="space-y-2 text-[11px] font-mono text-slate-300">
+            <div class="p-2 bg-slate-900 rounded border border-slate-800">
+              <span class="text-cyan-400 font-bold">sensors.lidar.getFront(deg)</span>
+              <p class="text-slate-400 text-[10px]">Jarak minimum rintangan depan [-deg, +deg].</p>
+            </div>
+            <div class="p-2 bg-slate-900 rounded border border-slate-800">
+              <span class="text-cyan-400 font-bold">sensors.lidar.getLeft(deg) / getRight(deg)</span>
+              <p class="text-slate-400 text-[10px]">Jarak rintangan sektor kiri (90°) / kanan (270°).</p>
+            </div>
+            <div class="p-2 bg-slate-900 rounded border border-slate-800">
+              <span class="text-purple-400 font-bold">robot.setVelocity(vx, vy, omega)</span>
+              <p class="text-slate-400 text-[10px]">vx = maju/mundur, vy = crabbing samping, omega = rotasi.</p>
+            </div>
+            <div class="p-2 bg-slate-900 rounded border border-slate-800">
+              <span class="text-pink-400 font-bold">robot.setShape("I" | "O" | "L" | "T" | "Z" | "S")</span>
+              <p class="text-slate-400 text-[10px]">Mengubah bentuk geometris modul Smorphi.</p>
+            </div>
+            <div class="p-2 bg-slate-900 rounded border border-slate-800">
+              <span class="text-emerald-400 font-bold">robot.log(pesan)</span>
+              <p class="text-slate-400 text-[10px]">Mencetak pesan langsung ke Simulator Console.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- TAB SWITCHER SCRIPT -->
+  <script>
+    function switchPanelTab(tabName) {
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      document.getElementById('tab-content-code').classList.add('hidden');
+      document.getElementById('tab-content-telemetry').classList.add('hidden');
+      document.getElementById('tab-content-config').classList.add('hidden');
+
+      document.getElementById('tab-btn-' + tabName).classList.add('active');
+      document.getElementById('tab-content-' + tabName).classList.remove('hidden');
+
+      // Resize editor if opened
+      if (tabName === 'code' && window.smorphiApp && window.smorphiApp.editor) {
+        window.smorphiApp.editor.resize();
+      }
+      if (tabName === 'telemetry' && window.smorphiApp && window.smorphiApp.telemetry) {
+        window.smorphiApp.telemetry.setupRadarCanvas();
+      }
+    }
+
+    // Initialize Lucide Icons on load
+    window.addEventListener('DOMContentLoaded', () => {
+      if (window.lucide) {
+        lucide.createIcons();
+      }
+    });
+  </script>
+
+  <!-- SIMULATOR JAVASCRIPT BUNDLE -->
+  <script src="js/config.js"></script>
+  <script src="js/smorphi.js"></script>
+  <script src="js/map.js"></script>
+  <script src="js/physics.js"></script>
+  <script src="js/sensors.js"></script>
+  <script src="js/codeEngine.js"></script>
+  <script src="js/telemetry.js"></script>
+  <script src="js/view3d.js"></script>
+  <script src="js/app.js"></script>
+
+</body>
+</html>
