@@ -1,7 +1,8 @@
 /**
  * Smorphi Robot Model & Kinematics Engine
- * Handles morphology transformations (7 Tetromino shapes),
- * 16-wheel Mecanum holonomic kinematics, and physical state integration.
+ * Platform: Single-Block Smorphi Base Unit with Front Cargo Mesh Scoop
+ * 4-Wheel Mecanum Holonomic Kinematics (3-DOF: Vx, Vy, Omega)
+ * Dynamic Mass Distribution, Center of Mass (CoM) Shift, and Wheel Slip Emulation.
  */
 
 class SmorphiRobot {
@@ -29,57 +30,37 @@ class SmorphiRobot {
     this.ax = 0.0;
     this.ay = 0.0;
 
-    // Morphology State
-    this.currentShape = "O"; // Default stable compact configuration
-    this.targetShape = "O";
+    // Physical dimensions & mass
+    this.width = CONFIG.ROBOT.WIDTH;   // 0.170 m
+    this.length = CONFIG.ROBOT.LENGTH; // 0.170 m
+    this.height = CONFIG.ROBOT.HEIGHT; // 0.315 m
+    this.baseMass = CONFIG.ROBOT.MASS; // 2.20 kg
+
+    // Dynamic Cargo Payload & CoM State
+    this.cargoCount = 0;
+    this.cargoMass = 0.0;
+    this.totalMass = this.baseMass;
+    this.comOffsetX = 0.0; // Forward displacement of Center of Mass (m)
+    this.rotationalInertia = (1 / 12) * this.baseMass * (this.width ** 2 + this.length ** 2);
+    this.tractionMultiplier = 1.0;
+    this.hasScoopContact = false;
+    this.scoopProximity = 0.25;
+
+    // Compatibility fields
+    this.currentShape = "SINGLE_BLOCK";
     this.isMorphing = false;
-    this.morphProgress = 1.0;
-    this.morphDuration = CONFIG.ROBOT.MORPH_DURATION;
 
-    // Active relative offsets of the 4 modules: [{id, x, y}]
-    this.sourceOffsets = JSON.parse(JSON.stringify(CONFIG.SHAPES["O"]));
-    this.targetOffsets = JSON.parse(JSON.stringify(CONFIG.SHAPES["O"]));
-    this.currentOffsets = JSON.parse(JSON.stringify(CONFIG.SHAPES["O"]));
-
-    // Wheel speeds for all 16 Mecanum wheels [4 modules x 4 wheels]
-    this.wheelSpeeds = new Float32Array(CONFIG.ROBOT.TOTAL_WHEELS);
-    this.wheelAngles = new Float32Array(CONFIG.ROBOT.TOTAL_WHEELS);
+    // 4 Mecanum wheels [0: FL, 1: FR, 2: RL, 3: RR]
+    this.totalWheels = CONFIG.ROBOT.TOTAL_WHEELS || 4;
+    this.wheelSpeeds = new Float32Array(this.totalWheels);
+    this.wheelAngles = new Float32Array(this.totalWheels);
 
     // Collision & Status flags
     this.inCollision = false;
     this.collisionCount = 0;
     this.totalDistanceTraveled = 0.0;
-    this.trajectory = []; // Breadcrumbs for trail visualization
+    this.trajectory = [];
     this.lastTrailTime = 0;
-
-    // Hinge angles between modules (3 hinges in LLR topology)
-    this.hingeAngles = [0, 0, 0];
-  }
-
-  /**
-   * Request shape transformation to one of the 7 Tetromino shapes
-   * @param {string} shape - "I" | "O" | "L" | "T" | "Z" | "S" | "J"
-   */
-  setShape(shape) {
-    if (!shape) return false;
-    const cleanShape = shape.toString().toUpperCase().trim();
-    if (!CONFIG.SHAPES[cleanShape]) {
-      console.warn(`[Smorphi] Invalid shape requested: "${shape}". Valid options: I, O, L, T, Z, S, J`);
-      return false;
-    }
-
-    if (this.currentShape === cleanShape && !this.isMorphing) {
-      return true; // Already in target shape
-    }
-
-    // Begin morphing interpolation
-    this.sourceOffsets = JSON.parse(JSON.stringify(this.currentOffsets));
-    this.targetOffsets = JSON.parse(JSON.stringify(CONFIG.SHAPES[cleanShape]));
-    this.targetShape = cleanShape;
-    this.isMorphing = true;
-    this.morphProgress = 0.0;
-
-    return true;
   }
 
   /**
@@ -118,6 +99,14 @@ class SmorphiRobot {
   }
 
   /**
+   * Compatibility method for older scripts (morphing is now obsolete)
+   */
+  setShape(shape) {
+    // Single block architecture does not morph
+    return true;
+  }
+
+  /**
    * Reset position to specific coordinates
    */
   resetPose(x = CONFIG.ARENA.DEFAULT_SPAWN.x, y = CONFIG.ARENA.DEFAULT_SPAWN.y, theta = 0) {
@@ -136,6 +125,47 @@ class SmorphiRobot {
     this.ay = 0;
     this.trajectory = [];
     this.inCollision = false;
+    this.collisionCount = 0;
+    this.totalDistanceTraveled = 0;
+    this.wheelAngles = [0, 0, 0, 0];
+    this.wheelSpeeds = [0, 0, 0, 0];
+  }
+
+  /**
+   * Update internal cargo load, Center of Mass (CoM), and rotational inertia
+   * @param {number} count - Number of captured cubes (0, 1, 2, 3)
+   * @param {boolean} contact - Tactile sensor flag in scoop
+   * @param {number} proximity - Distance to nearest cube in front
+   */
+  updateCargoState(count, contact = false, proximity = 0.25) {
+    this.cargoCount = count;
+    this.cargoMass = count * CONFIG.CARGO.MASS;
+    this.totalMass = this.baseMass + this.cargoMass;
+    this.hasScoopContact = contact;
+    this.scoopProximity = proximity;
+
+    // Forward displacement of CoM: scoop center is ~0.145m forward
+    const scoopCenterDist = (CONFIG.SCOOP.MOUNT_X + CONFIG.SCOOP.LENGTH / 2) || 0.155;
+    this.comOffsetX = (this.cargoMass * scoopCenterDist) / this.totalMass;
+
+    // Parallel Axis Theorem for Rotational Inertia (I_zz)
+    const baseI = (1 / 12) * this.baseMass * (this.width ** 2 + this.length ** 2);
+    const cargoI = count * (
+      (1 / 6) * CONFIG.CARGO.MASS * (CONFIG.CARGO.SIZE ** 2) +
+      CONFIG.CARGO.MASS * ((scoopCenterDist - this.comOffsetX) ** 2)
+    );
+    this.rotationalInertia = baseI + this.baseMass * (this.comOffsetX ** 2) + cargoI;
+
+    // Wheel traction multiplier under extra load (proportional slip factor)
+    const slipFactor = CONFIG.CARGO.SLIP_FACTOR || 0.32;
+    this.tractionMultiplier = Math.max(0.45, 1.0 - slipFactor * (this.cargoMass / this.baseMass));
+  }
+
+  /**
+   * Get loaded total mass in kg
+   */
+  getLoadedMass() {
+    return this.totalMass;
   }
 
   /**
@@ -143,42 +173,28 @@ class SmorphiRobot {
    * @param {number} dt - Delta time in seconds
    */
   update(dt) {
-    // 1. Update Morphology Transformation
-    if (this.isMorphing) {
-      this.morphProgress += dt / this.morphDuration;
-      if (this.morphProgress >= 1.0) {
-        this.morphProgress = 1.0;
-        this.isMorphing = false;
-        this.currentShape = this.targetShape;
-        this.currentOffsets = JSON.parse(JSON.stringify(this.targetOffsets));
-      } else {
-        // Smooth S-curve easing (smootherstep)
-        const t = this.morphProgress;
-        const ease = t * t * t * (t * (t * 6 - 15) + 10);
+    // 1. Dynamic acceleration limits based on current mass and inertia
+    const massRatio = this.baseMass / this.totalMass; // Slows down when loaded
+    const inertiaRatio = ((1 / 12) * this.baseMass * (this.width ** 2 + this.length ** 2)) / this.rotationalInertia;
 
-        for (let i = 0; i < CONFIG.ROBOT.NUM_MODULES; i++) {
-          this.currentOffsets[i].x = this.sourceOffsets[i].x + (this.targetOffsets[i].x - this.sourceOffsets[i].x) * ease;
-          this.currentOffsets[i].y = this.sourceOffsets[i].y + (this.targetOffsets[i].y - this.sourceOffsets[i].y) * ease;
-        }
-      }
-    }
-
-    // 2. Accelerate velocities toward targets (Ramping dynamics)
-    const maxLinDelta = CONFIG.ROBOT.LINEAR_ACCEL * dt;
-    const maxAngDelta = CONFIG.ROBOT.ANGULAR_ACCEL * dt;
+    const maxLinDelta = CONFIG.ROBOT.LINEAR_ACCEL * massRatio * dt;
+    const maxAngDelta = CONFIG.ROBOT.ANGULAR_ACCEL * inertiaRatio * dt;
 
     const prevVx = this.vx;
     const prevVy = this.vy;
 
+    // Apply wheel slip to lateral strafe command (Vy) when loaded
+    const effectiveTargetVy = this.targetVy * this.tractionMultiplier;
+
     this.vx += Math.max(-maxLinDelta, Math.min(maxLinDelta, this.targetVx - this.vx));
-    this.vy += Math.max(-maxLinDelta, Math.min(maxLinDelta, this.targetVy - this.vy));
+    this.vy += Math.max(-maxLinDelta, Math.min(maxLinDelta, effectiveTargetVy - this.vy));
     this.omega += Math.max(-maxAngDelta, Math.min(maxAngDelta, this.targetOmega - this.omega));
 
     // Approximate body accelerations for IMU
     this.ax = (this.vx - prevVx) / dt;
     this.ay = (this.vy - prevVy) / dt;
 
-    // 3. Coordinate Transformation: Body velocities -> Global velocities
+    // 2. Coordinate Transformation: Body velocities -> Global velocities
     // Heading: 0 rad points along +X axis, PI/2 points along +Y axis
     const cosT = Math.cos(this.theta);
     const sinT = Math.sin(this.theta);
@@ -186,7 +202,7 @@ class SmorphiRobot {
     this.globalVx = this.vx * cosT - this.vy * sinT;
     this.globalVy = this.vx * sinT + this.vy * cosT;
 
-    // 4. Integrate Global Pose
+    // 3. Integrate Global Pose
     const prevX = this.x;
     const prevY = this.y;
 
@@ -202,13 +218,10 @@ class SmorphiRobot {
     const stepDist = Math.hypot(this.x - prevX, this.y - prevY);
     this.totalDistanceTraveled += stepDist;
 
-    // 5. Mecanum Kinematics (Compute 16 wheel rotational speeds)
+    // 4. Mecanum Kinematics (Compute 4 wheel rotational speeds)
     this.updateWheelKinematics(dt);
 
-    // 6. Compute Hinge Articulation Angles
-    this.updateHingeAngles();
-
-    // 7. Update Trajectory Breadcrumbs
+    // 5. Update Trajectory Breadcrumbs
     const now = performance.now();
     if (now - this.lastTrailTime > 80 && (stepDist > 0.005 || Math.abs(this.omega) > 0.05)) {
       this.trajectory.push({ x: this.x, y: this.y });
@@ -220,109 +233,39 @@ class SmorphiRobot {
   }
 
   /**
-   * Inverse kinematics for 16 Mecanum Wheels across the 4 modular blocks
+   * Inverse kinematics for 4 Mecanum Wheels at chassis corners
    */
   updateWheelKinematics(dt) {
-    const R = CONFIG.ROBOT.WHEEL_RADIUS;
-    const s = CONFIG.ROBOT.MODULE_SIZE / 2; // half module size (0.08m)
+    const R = CONFIG.ROBOT.WHEEL_RADIUS; // 0.030m
+    const wheelOffsets = CONFIG.ROBOT.WHEEL_OFFSETS;
 
-    // Local wheel positions relative to each module center:
-    // [Front-Left, Front-Right, Rear-Left, Rear-Right]
-    const localWheelOffsets = [
-      { lx:  s * 0.7, ly:  s * 0.9, rollerSign:  1 }, // FL (+45)
-      { lx:  s * 0.7, ly: -s * 0.9, rollerSign: -1 }, // FR (-45)
-      { lx: -s * 0.7, ly:  s * 0.9, rollerSign: -1 }, // RL (-45)
-      { lx: -s * 0.7, ly: -s * 0.9, rollerSign:  1 }, // RR (+45)
-    ];
+    for (let w = 0; w < this.totalWheels; w++) {
+      const off = wheelOffsets[w];
+      const rx = off.lx;
+      const ry = off.ly;
 
-    let wheelIdx = 0;
-    for (let m = 0; m < CONFIG.ROBOT.NUM_MODULES; m++) {
-      const mod = this.currentOffsets[m];
+      // Mecanum inverse kinematics equation:
+      // V_wheel = (Vx - Vy * rollerSign + (rx * rollerSign - ry) * omega) / R
+      const vWheel = (this.vx - off.rollerSign * this.vy + (rx * off.rollerSign - ry) * this.omega) / R;
 
-      for (let w = 0; w < 4; w++) {
-        const offset = localWheelOffsets[w];
-        // Total lever arm from robot centroid to this specific wheel:
-        const rx = mod.x + offset.lx;
-        const ry = mod.y + offset.ly;
-
-        // Mecanum inverse kinematics equation:
-        // V_wheel = (Vx - Vy * rollerSign + (rx * rollerSign - ry) * omega) / R
-        const vWheel = (this.vx - offset.rollerSign * this.vy + (rx * offset.rollerSign - ry) * this.omega) / R;
-
-        this.wheelSpeeds[wheelIdx] = vWheel;
-        this.wheelAngles[wheelIdx] += vWheel * dt;
-        wheelIdx++;
-      }
+      this.wheelSpeeds[w] = vWheel;
+      this.wheelAngles[w] += vWheel * dt;
     }
   }
 
   /**
-   * Compute relative hinge angles between adjacent connected modules
-   */
-  updateHingeAngles() {
-    for (let i = 0; i < 3; i++) {
-      const mA = this.currentOffsets[i];
-      const mB = this.currentOffsets[i + 1];
-      const dx = mB.x - mA.x;
-      const dy = mB.y - mA.y;
-      this.hingeAngles[i] = Math.atan2(dy, dx);
-    }
-  }
-
-  /**
-   * Get 4 Oriented Bounding Boxes (OBBs) for the active Smorphi configuration
-   * Returns array of module collision structures in global coordinates
+   * Get Oriented Bounding Boxes (OBBs) for the active Single-Block Smorphi
+   * Delegates to RobotGeometry.buildRobotOBBs
    */
   getModuleBoxes() {
-    const halfSize = CONFIG.ROBOT.MODULE_SIZE / 2;
-    const cosT = Math.cos(this.theta);
-    const sinT = Math.sin(this.theta);
-
-    return this.currentOffsets.map((mod, idx) => {
-      // Global center of this module
-      const cx = this.x + mod.x * cosT - mod.y * sinT;
-      const cy = this.y + mod.x * sinT + mod.y * cosT;
-
-      // 4 local corners relative to module center
-      const corners = [
-        { lx: -halfSize, ly: -halfSize },
-        { lx:  halfSize, ly: -halfSize },
-        { lx:  halfSize, ly:  halfSize },
-        { lx: -halfSize, ly:  halfSize },
-      ].map(pt => ({
-        x: cx + pt.lx * cosT - pt.ly * sinT,
-        y: cy + pt.lx * sinT + pt.ly * cosT,
-      }));
-
-      // Normals/Axes for SAT collision
-      const axes = [
-        { x: cosT, y: sinT },
-        { x: -sinT, y: cosT },
-      ];
-
-      return {
-        moduleId: idx,
-        cx,
-        cy,
-        halfSize,
-        corners,
-        axes,
-        rotation: this.theta,
-      };
-    });
+    return RobotGeometry.buildRobotOBBs(this.x, this.y, this.theta);
   }
 
   /**
-   * Get overall approximate circular bounding radius for fast broad-phase collision
+   * Get approximate circular bounding radius for fast broad-phase collision
    */
   getBoundingRadius() {
-    let maxDistSq = 0;
-    for (const mod of this.currentOffsets) {
-      const dSq = mod.x * mod.x + mod.y * mod.y;
-      if (dSq > maxDistSq) maxDistSq = dSq;
-    }
-    // Module half-diagonal is sqrt(0.08^2 + 0.08^2) ~= 0.113m
-    return Math.sqrt(maxDistSq) + 0.115;
+    return RobotGeometry.getBoundingRadius();
   }
 }
 

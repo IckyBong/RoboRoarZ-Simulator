@@ -1,7 +1,8 @@
 /**
  * Real-Time Telemetry Dashboard & Polar Radar Renderer
+ * Platform: Single-Block Smorphi Base Unit with Front Cargo Mesh Scoop
  * Renders high-DPI 360° LiDAR polar plot, IMU compass heading gauge,
- * holonomic velocity bars, and morphology shape indicators.
+ * holonomic velocity bars, Cargo Scoop Payload indicators, and CoM shift gauges.
  */
 
 class TelemetryDashboard {
@@ -52,26 +53,26 @@ class TelemetryDashboard {
    * Update all telemetry components on each animation frame
    */
   update(robot, sensorSuite, arenaMap) {
-    this.renderLidarRadar(sensorSuite.lidarRanges, robot.currentShape);
+    this.renderLidarRadar(sensorSuite.lidarRanges);
     this.updateIMUDisplay(sensorSuite.imu);
     this.updateVelocityBars(robot.vx, robot.vy, robot.omega);
     this.updatePoseDisplay(robot, sensorSuite.target);
-    this.updateShapeDisplay(robot.currentShape, robot.isMorphing);
+    this.updateCargoDisplay(sensorSuite.cargo, robot);
   }
 
   /**
-   * Render high-DPI 360-degree Polar LiDAR radar
+   * Render high-DPI 360-degree Polar LiDAR radar with Single-Block robot & scoop glyph
    */
-  renderLidarRadar(ranges, currentShape) {
+  renderLidarRadar(ranges) {
     if (!this.radarCtx || !ranges) return;
     const ctx = this.radarCtx;
     const S = this.radarDisplaySize;
     const cx = S / 2;
     const cy = S / 2;
-    const maxRadarMeters = 4.0; // Display range up to 4.0m
+    const maxRadarMeters = 4.0;
     const scale = (cx - 14) / maxRadarMeters;
 
-    // Clear background with subtle persistence
+    // Clear background
     ctx.fillStyle = "#090d16";
     ctx.fillRect(0, 0, S, S);
 
@@ -85,12 +86,10 @@ class TelemetryDashboard {
       ctx.arc(cx, cy, radius, 0, Math.PI * 2);
 
       if (r === 0.6) {
-        // Warning threshold ring (0.6m)
         ctx.strokeStyle = "rgba(239, 68, 68, 0.4)";
         ctx.setLineDash([4, 4]);
         ctx.stroke();
         ctx.setLineDash([]);
-        // Label
         ctx.fillStyle = "rgba(239, 68, 68, 0.8)";
         ctx.font = "9px monospace";
         ctx.fillText("0.6m", cx + radius - 24, cy - 3);
@@ -103,7 +102,7 @@ class TelemetryDashboard {
       }
     }
 
-    // 2. Crosshairs & Angles
+    // 2. Crosshairs
     ctx.strokeStyle = "rgba(100, 116, 139, 0.2)";
     ctx.beginPath();
     ctx.moveTo(cx, 10);
@@ -112,47 +111,62 @@ class TelemetryDashboard {
     ctx.lineTo(S - 10, cy);
     ctx.stroke();
 
-    // 3. Render 360 LiDAR Beams / Point Cloud
-    // In robot frame: 0° is FRONT (Top in radar), 90° is LEFT, 270° is RIGHT
-    ctx.beginPath();
-    let first = true;
-
+    // 3. Render 360 LiDAR Points
     for (let i = 0; i < CONFIG.LIDAR.NUM_BEAMS; i += 2) {
       const dist = ranges[i];
       if (dist === undefined) continue;
 
-      // Transform robot angle (0 = front/up, 90 = left) to canvas coordinates
       const angleRad = (i * Math.PI) / 180;
-      // Front is -Y, Left is -X
+      // 0° is FRONT (-Y in radar), 90° is LEFT (-X in radar)
       const px = cx - Math.sin(angleRad) * dist * scale;
       const py = cy - Math.cos(angleRad) * dist * scale;
 
-      // Draw point
       let color;
       if (dist < 0.6) {
-        color = "#ef4444"; // Red Danger
+        color = "#ef4444";
       } else if (dist < 1.2) {
-        color = "#f59e0b"; // Amber Warning
+        color = "#f59e0b";
       } else {
-        color = "#06b6d4"; // Cyan Safe
+        color = "#06b6d4";
       }
 
       ctx.fillStyle = color;
       ctx.fillRect(px - 1, py - 1, 2.5, 2.5);
     }
 
-    // 4. Center Robot Glyph
-    ctx.fillStyle = "#38bdf8";
-    ctx.beginPath();
-    ctx.arc(cx, cy, 4, 0, Math.PI * 2);
-    ctx.fill();
+    // 4. Center Single-Block Robot Glyph with Front Scoop
+    // Robot is 170x170mm (scale to radar pixels: 0.17 * scale)
+    const robW = 0.17 * scale;
+    const robL = 0.17 * scale;
 
-    // Forward direction indicator arrow
+    ctx.fillStyle = "#1e293b";
     ctx.strokeStyle = "#38bdf8";
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.rect(cx - robW / 2, cy - robL / 2, robW, robL);
+    ctx.fill();
+    ctx.stroke();
+
+    // Front Scoop U-Shape outline at top of robot (-Y in radar)
+    const scoopLen = 0.14 * scale;
+    const scoopW = 0.19 * scale;
+    ctx.strokeStyle = "#06b6d4";
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(cx - scoopW / 2, cy - robL / 2);
+    ctx.lineTo(cx - scoopW / 2, cy - robL / 2 - scoopLen);
+    ctx.lineTo(cx - scoopW / 2 + 3, cy - robL / 2 - scoopLen);
+    ctx.moveTo(cx + scoopW / 2, cy - robL / 2);
+    ctx.lineTo(cx + scoopW / 2, cy - robL / 2 - scoopLen);
+    ctx.lineTo(cx + scoopW / 2 - 3, cy - robL / 2 - scoopLen);
+    ctx.stroke();
+
+    // Forward Direction Arrow
+    ctx.strokeStyle = "#f59e0b";
     ctx.lineWidth = 2;
     ctx.beginPath();
     ctx.moveTo(cx, cy);
-    ctx.lineTo(cx, cy - 12);
+    ctx.lineTo(cx, cy - robL / 2 - scoopLen - 4);
     ctx.stroke();
   }
 
@@ -170,7 +184,6 @@ class TelemetryDashboard {
       this.dom.imuYawRate.textContent = `${imu.yaw_rate.toFixed(1)}°/s`;
     }
     if (this.dom.imuCompassNeedle) {
-      // Rotate needle according to heading
       this.dom.imuCompassNeedle.style.transform = `rotate(${imu.heading}deg)`;
     }
   }
@@ -204,7 +217,7 @@ class TelemetryDashboard {
   }
 
   /**
-   * Update Global Pose and Goal Distance
+   * Update Global Pose and Goal Distance (Passive Target)
    */
   updatePoseDisplay(robot, target) {
     if (this.dom.poseX) this.dom.poseX.textContent = `${robot.x.toFixed(2)} m`;
@@ -213,7 +226,7 @@ class TelemetryDashboard {
     if (this.dom.distGoal) {
       this.dom.distGoal.textContent = `${target.distance.toFixed(2)} m`;
       if (target.reached) {
-        this.dom.distGoal.innerHTML = `<span class="text-emerald-400 font-bold animate-pulse">REACHED!</span>`;
+        this.dom.distGoal.innerHTML = `<span class="text-cyan-400 font-bold">AT GOAL AREA (${target.distance.toFixed(2)} m)</span>`;
       }
     }
     if (this.dom.collisionCount) {
@@ -227,55 +240,89 @@ class TelemetryDashboard {
   }
 
   /**
-   * Update Morphology Preview Badge & Mini Tetromino Visualizer
+   * Update Cargo Scoop Payload Monitor & CoM Shift Gauges
+   * @param {object} cargo
+   * @param {SmorphiRobot} robot
    */
-  updateShapeDisplay(shape, isMorphing) {
+  updateCargoDisplay(cargo, robot) {
+    if (!cargo) return;
+
+    // 1. Update Top-Right Active Badge
     if (this.dom.activeShapeBadge) {
-      if (isMorphing) {
-        this.dom.activeShapeBadge.textContent = `MORPHING...`;
-        this.dom.activeShapeBadge.className = "px-2.5 py-1 text-xs font-mono font-bold rounded-md bg-amber-500/20 text-amber-400 border border-amber-500/40 animate-pulse";
+      const count = cargo.count || 0;
+      const totalMass = (cargo.totalMassKg || 0).toFixed(2);
+      if (count === 3) {
+        this.dom.activeShapeBadge.textContent = `CARGO FULL: 3/3 (${totalMass} kg)`;
+        this.dom.activeShapeBadge.className = "px-2.5 py-1 text-xs font-mono font-bold rounded-md bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 animate-pulse";
+      } else if (count > 0) {
+        this.dom.activeShapeBadge.textContent = `CARGO: ${count}/3 (${totalMass} kg)`;
+        this.dom.activeShapeBadge.className = "px-2.5 py-1 text-xs font-mono font-bold rounded-md bg-amber-500/20 text-amber-400 border border-amber-500/40";
       } else {
-        this.dom.activeShapeBadge.textContent = `SHAPE: ${shape}`;
-        this.dom.activeShapeBadge.className = "px-2.5 py-1 text-xs font-mono font-bold rounded-md bg-cyan-500/20 text-cyan-400 border border-cyan-500/40";
+        this.dom.activeShapeBadge.textContent = `SCOOP EMPTY (0/3)`;
+        this.dom.activeShapeBadge.className = "px-2.5 py-1 text-xs font-mono font-bold rounded-md bg-slate-800 text-slate-400 border border-slate-700";
       }
     }
 
+    // 2. Update 3-Slot Cargo Scoop Preview Widget
     if (this.dom.shapePreviewGrid) {
-      this.renderMiniShapePreview(shape);
-    }
-  }
+      const cubes = cargo.cubes || [];
+      const comShiftMm = ((robot.comOffsetX || 0) * 1000).toFixed(1);
+      const tractionPct = Math.round((robot.tractionMultiplier || 1.0) * 100);
 
-  /**
-   * Render 4x4 mini grid showing module blocks configuration
-   */
-  renderMiniShapePreview(shape) {
-    const coords = CONFIG.SHAPES[shape] || CONFIG.SHAPES["O"];
-    let html = '<div class="grid grid-cols-4 gap-1 w-20 h-20 p-1.5 bg-slate-900 border border-slate-700 rounded-lg">';
+      let html = `
+        <div class="flex flex-col gap-1.5 p-2 bg-slate-900 border border-slate-700 rounded-lg w-44 text-[10px] font-mono">
+          <div class="flex justify-between items-center text-slate-300 font-semibold border-b border-slate-800 pb-1">
+            <span>MESH SCOOP</span>
+            <span class="${cargo.hasContact ? 'text-emerald-400' : 'text-slate-500'}">${cargo.hasContact ? 'CONTACT' : 'CLEAR'}</span>
+          </div>
 
-    // Map each module (offset in units of 0.16m) to 4x4 grid (row 0-3, col 0-3)
-    const occupied = new Set();
-    for (const mod of coords) {
-      // x is forward/up, y is left
-      const r = Math.round(1.5 - mod.x / 0.16);
-      const c = Math.round(1.5 + mod.y / 0.16);
-      if (r >= 0 && r < 4 && c >= 0 && c < 4) {
-        occupied.add(`${r},${c}`);
-      }
-    }
+          <!-- 3 Cargo Slot Boxes -->
+          <div class="grid grid-cols-3 gap-1 py-0.5">
+      `;
 
-    for (let r = 0; r < 4; r++) {
-      for (let c = 0; c < 4; c++) {
-        const isBlock = occupied.has(`${r},${c}`);
-        if (isBlock) {
-          html += `<div class="bg-cyan-500 rounded-sm shadow-sm border border-cyan-300/40"></div>`;
+      const slotColors = ["#f59e0b", "#06b6d4", "#10b981"];
+      const slotNames = ["Amber", "Cyan", "Emerald"];
+
+      for (let s = 0; s < 3; s++) {
+        const cube = cubes[s];
+        const isCaptured = cube && cube.state === "CAPTURED_INSIDE_MESH";
+        const color = slotColors[s];
+        const name = slotNames[s];
+
+        if (isCaptured) {
+          html += `
+            <div class="flex flex-col items-center justify-center p-1 rounded border border-cyan-400/50" style="background-color: ${color}25">
+              <span class="w-3 h-3 rounded-sm shadow-sm" style="background-color: ${color}"></span>
+              <span class="text-[9px] mt-0.5 font-bold" style="color: ${color}">#0${s+1}</span>
+            </div>
+          `;
         } else {
-          html += `<div class="bg-slate-800/40 rounded-sm"></div>`;
+          html += `
+            <div class="flex flex-col items-center justify-center p-1 rounded bg-slate-950/60 border border-slate-800 text-slate-600">
+              <span class="w-3 h-3 rounded-sm border border-dashed border-slate-700"></span>
+              <span class="text-[9px] mt-0.5">SLOT ${s+1}</span>
+            </div>
+          `;
         }
       }
-    }
 
-    html += '</div>';
-    this.dom.shapePreviewGrid.innerHTML = html;
+      html += `
+          </div>
+
+          <!-- CoM & Traction Metrics -->
+          <div class="flex justify-between text-slate-400 pt-0.5 border-t border-slate-800/80">
+            <span>CoM Shift:</span>
+            <span class="text-cyan-400 font-bold">+${comShiftMm} mm</span>
+          </div>
+          <div class="flex justify-between text-slate-400">
+            <span>Traction:</span>
+            <span class="${tractionPct < 80 ? 'text-amber-400' : 'text-emerald-400'} font-bold">${tractionPct}%</span>
+          </div>
+        </div>
+      `;
+
+      this.dom.shapePreviewGrid.innerHTML = html;
+    }
   }
 }
 

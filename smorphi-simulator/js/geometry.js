@@ -1,79 +1,52 @@
 /**
  * Shared Robot Geometry Helpers
  * Single source of truth for footprint calculations used by map generation and physics.
+ * Single-Block Smorphi Base Unit with Front Cargo Mesh Scoop.
  */
 
 const RobotGeometry = {
   /**
-   * Get module offsets for a given shape from CONFIG.SHAPES
-   * @param {string} shape - Shape key (I, O, L, T, Z, S, J)
-   * @returns {Array<{id: number, x: number, y: number}>}
+   * Get the bounding radius of the robot including front scoop (from center to farthest corner)
+   * Front scoop tip is at x = +0.225m, y = ±0.095m -> radius ~ 0.244m
    */
-  getShapeOffsets(shape) {
-    return CONFIG.SHAPES[shape] || CONFIG.SHAPES["O"];
+  getBoundingRadius(shape) {
+    const scoopLen = CONFIG.SCOOP ? (CONFIG.SCOOP.MOUNT_X + CONFIG.SCOOP.LENGTH) : 0.225;
+    const scoopHalfW = CONFIG.SCOOP ? (CONFIG.SCOOP.OUTER_WIDTH / 2) : 0.095;
+    return Math.hypot(scoopLen, scoopHalfW);
   },
 
   /**
-   * Compute the axis-aligned bounding box of a shape's footprint.
-   * Each module is MODULE_SIZE x MODULE_SIZE centered at its offset.
-   * @param {string} shape
-   * @returns {{minX: number, minY: number, maxX: number, maxY: number, width: number, height: number}}
+   * Compute the axis-aligned bounding box of the robot footprint in local frame.
    */
   getFootprintAABB(shape) {
-    const offsets = this.getShapeOffsets(shape);
-    const half = CONFIG.ROBOT.MODULE_SIZE / 2;
-    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-    for (const m of offsets) {
-      minX = Math.min(minX, m.x - half);
-      minY = Math.min(minY, m.y - half);
-      maxX = Math.max(maxX, m.x + half);
-      maxY = Math.max(maxY, m.y + half);
-    }
+    const halfW = CONFIG.ROBOT.WIDTH / 2; // 0.085
+    const halfL = CONFIG.ROBOT.LENGTH / 2; // 0.085
+    const scoopFront = CONFIG.SCOOP ? (CONFIG.SCOOP.MOUNT_X + CONFIG.SCOOP.LENGTH) : 0.225;
+    const scoopHalfW = CONFIG.SCOOP ? (CONFIG.SCOOP.OUTER_WIDTH / 2) : 0.095;
+
+    const minX = -halfL;
+    const maxX = scoopFront;
+    const minY = -Math.max(halfW, scoopHalfW);
+    const maxY = Math.max(halfW, scoopHalfW);
+
     return { minX, minY, maxX, maxY, width: maxX - minX, height: maxY - minY };
   },
 
   /**
-   * Compute the bounding radius of a shape (max distance from center to any module corner).
-   * This is the orientation-independent envelope radius.
-   * @param {string} shape
-   * @returns {number}
-   */
-  getBoundingRadius(shape) {
-    const offsets = this.getShapeOffsets(shape);
-    const half = CONFIG.ROBOT.MODULE_SIZE / 2;
-    const halfDiag = Math.hypot(half, half);
-    let maxR = 0;
-    for (const m of offsets) {
-      const r = Math.hypot(m.x, m.y) + halfDiag;
-      if (r > maxR) maxR = r;
-    }
-    return maxR;
-  },
-
-  /**
    * Get navigation footprint for a given profile.
-   * For FIXED_O: returns orientation-independent circular envelope.
-   * @param {string} profile - Navigation profile name
-   * @returns {{shape: string, boundingRadius: number, aabb: object, translationalClearance: number, turningClearance: number}}
    */
   getNavigationFootprint(profile) {
     const nav = CONFIG.MAP_NAVIGATION;
-    const shape = nav.shape;
+    const shape = nav.shape || "SINGLE_BLOCK";
     const aabb = this.getFootprintAABB(shape);
     const boundingRadius = this.getBoundingRadius(shape);
-    // For a square-like shape, the translational clearance = bounding radius + safety margin
-    // For FIXED_O specifically, the robot is 0.32x0.32, bounding radius ~ 0.2263
-    const translationalClearance = boundingRadius + nav.linearSafetyMargin;
-    const turningClearance = nav.minTurningClearance;
+    const translationalClearance = boundingRadius + (nav.linearSafetyMargin || 0.04);
+    const turningClearance = nav.minTurningClearance || 0.52;
     return { shape, boundingRadius, aabb, translationalClearance, turningClearance };
   },
 
   /**
    * Get the required obstacle inflation radius for configuration-space expansion.
-   * This is the distance by which obstacles must be expanded so the pathfinding
-   * grid represents valid robot CENTER positions.
-   * @param {string} profile
-   * @returns {number}
    */
   getObstacleInflation(profile) {
     const fp = this.getNavigationFootprint(profile);
@@ -81,27 +54,21 @@ const RobotGeometry = {
   },
 
   /**
-   * Build OBB corners and axes for a robot module at a given global position and heading.
-   * Reuses the same logic as SmorphiRobot.getModuleBoxes but standalone.
-   * @param {number} cx - Global center X
-   * @param {number} cy - Global center Y
-   * @param {number} theta - Robot heading in radians
-   * @param {{x: number, y: number}} moduleOffset - Local offset of this module
-   * @returns {{cx, cy, halfW, halfH, corners: Array, axes: Array}}
+   * Helper to build an arbitrary oriented bounding box (OBB)
    */
-  buildModuleOBB(cx, cy, theta, moduleOffset) {
-    const half = CONFIG.ROBOT.MODULE_SIZE / 2;
+  buildOBB(cx, cy, halfW, halfH, theta, centerOffsetX = 0, centerOffsetY = 0) {
     const cosT = Math.cos(theta);
     const sinT = Math.sin(theta);
-    // Global center of this module
-    const mx = cx + moduleOffset.x * cosT - moduleOffset.y * sinT;
-    const my = cy + moduleOffset.x * sinT + moduleOffset.y * cosT;
+
+    // Global center of this OBB
+    const mx = cx + centerOffsetX * cosT - centerOffsetY * sinT;
+    const my = cy + centerOffsetX * sinT + centerOffsetY * cosT;
 
     const corners = [
-      { x: mx + (-half) * cosT - (-half) * sinT, y: my + (-half) * sinT + (-half) * cosT },
-      { x: mx + ( half) * cosT - (-half) * sinT, y: my + ( half) * sinT + (-half) * cosT },
-      { x: mx + ( half) * cosT - ( half) * sinT, y: my + ( half) * sinT + ( half) * cosT },
-      { x: mx + (-half) * cosT - ( half) * sinT, y: my + (-half) * sinT + ( half) * cosT },
+      { x: mx + (-halfW) * cosT - (-halfH) * sinT, y: my + (-halfW) * sinT + (-halfH) * cosT },
+      { x: mx + ( halfW) * cosT - (-halfH) * sinT, y: my + ( halfW) * sinT + (-halfH) * cosT },
+      { x: mx + ( halfW) * cosT - ( halfH) * sinT, y: my + ( halfW) * sinT + ( halfH) * cosT },
+      { x: mx + (-halfW) * cosT - ( halfH) * sinT, y: my + (-halfW) * sinT + ( halfH) * cosT },
     ];
 
     const axes = [
@@ -109,24 +76,54 @@ const RobotGeometry = {
       { x: -sinT, y: cosT },
     ];
 
-    return { cx: mx, cy: my, halfW: half, halfH: half, corners, axes };
+    return { cx: mx, cy: my, halfW, halfH, corners, axes };
   },
 
   /**
-   * Build all 4 module OBBs for a given shape at a position and heading.
-   * @param {string} shape
-   * @param {number} cx
-   * @param {number} cy
-   * @param {number} theta
-   * @returns {Array<{cx, cy, halfW, halfH, corners, axes}>}
+   * Build all OBBs for the Single-Block robot:
+   * 1. Main Base Unit Chassis (170x170mm)
+   * 2. Scoop Left Prong
+   * 3. Scoop Right Prong
+   * 4. Scoop Back/Base
+   */
+  buildRobotOBBs(cx, cy, theta) {
+    const halfL = CONFIG.ROBOT.LENGTH / 2; // 0.085m
+    const halfW = CONFIG.ROBOT.WIDTH / 2;  // 0.085m
+
+    const scoopMountX = CONFIG.SCOOP ? CONFIG.SCOOP.MOUNT_X : 0.085;
+    const scoopLen = CONFIG.SCOOP ? CONFIG.SCOOP.LENGTH : 0.140;
+    const scoopOuterHalfW = CONFIG.SCOOP ? (CONFIG.SCOOP.OUTER_WIDTH / 2) : 0.095;
+    const wallThick = CONFIG.SCOOP ? CONFIG.SCOOP.WALL_THICKNESS : 0.012;
+
+    const boxes = [];
+
+    // 1. Main Chassis Box
+    boxes.push(this.buildOBB(cx, cy, halfL, halfW, theta, 0, 0));
+
+    // 2. Scoop Left Wall Prong
+    const prongLen = scoopLen;
+    const prongCenterX = scoopMountX + prongLen / 2;
+    const prongCenterY = scoopOuterHalfW - wallThick / 2;
+    boxes.push(this.buildOBB(cx, cy, prongLen / 2, wallThick / 2, theta, prongCenterX, prongCenterY));
+
+    // 3. Scoop Right Wall Prong
+    boxes.push(this.buildOBB(cx, cy, prongLen / 2, wallThick / 2, theta, prongCenterX, -prongCenterY));
+
+    // 4. Scoop Back/Lip Wall
+    boxes.push(this.buildOBB(cx, cy, wallThick / 2, scoopOuterHalfW, theta, scoopMountX + wallThick / 2, 0));
+
+    return boxes;
+  },
+
+  /**
+   * Compatibility alias for map generator
    */
   buildShapeOBBs(shape, cx, cy, theta) {
-    const offsets = this.getShapeOffsets(shape);
-    return offsets.map(m => this.buildModuleOBB(cx, cy, theta, m));
+    return this.buildRobotOBBs(cx, cy, theta);
   },
 
   /**
-   * SAT collision test between two OBBs. Same algorithm as PhysicsEngine.testOBBCollision.
+   * SAT collision test between two OBBs.
    * @param {object} boxA - {corners, axes}
    * @param {object} boxB - {corners, axes, cx, cy}
    * @returns {{intersects: boolean, depth?: number, normal?: {x, y}}}
@@ -175,22 +172,14 @@ const RobotGeometry = {
   },
 
   /**
-   * Test if a robot placed at (cx, cy, theta) in a given shape collides with any obstacle or boundary.
-   * @param {string} shape
-   * @param {number} cx
-   * @param {number} cy
-   * @param {number} theta
-   * @param {Array} obstacles - Array of {x, y, w, h}
-   * @param {number} arenaW
-   * @param {number} arenaH
-   * @returns {boolean} true if collision detected
+   * Test if a robot placed at (cx, cy, theta) collides with any obstacle or boundary.
    */
   testRobotCollision(shape, cx, cy, theta, obstacles, arenaW, arenaH) {
-    const moduleOBBs = this.buildShapeOBBs(shape, cx, cy, theta);
+    const robotOBBs = this.buildRobotOBBs(cx, cy, theta);
 
     // Test boundary
-    for (const mod of moduleOBBs) {
-      for (const corner of mod.corners) {
+    for (const box of robotOBBs) {
+      for (const corner of box.corners) {
         if (corner.x < 0.001 || corner.x > arenaW - 0.001 ||
             corner.y < 0.001 || corner.y > arenaH - 0.001) {
           return true;
@@ -217,8 +206,8 @@ const RobotGeometry = {
         ],
       };
 
-      for (const mod of moduleOBBs) {
-        const result = this.testOBBCollision(mod, obsBox);
+      for (const box of robotOBBs) {
+        const result = this.testOBBCollision(box, obsBox);
         if (result.intersects) return true;
       }
     }

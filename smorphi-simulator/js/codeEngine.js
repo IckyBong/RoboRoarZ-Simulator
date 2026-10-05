@@ -1,7 +1,7 @@
 /**
  * Interactive Code Injection & Script Execution Engine
- * Compiles and executes user JavaScript navigation scripts in real-time,
- * provides sandboxed error isolation, persistent memory across ticks, and preset algorithms.
+ * Platform: Single-Block Smorphi Base Unit with Front Cargo Mesh Scoop
+ * Compiles and executes user JavaScript navigation scripts in real-time.
  */
 
 class CodeEngine {
@@ -16,99 +16,110 @@ class CodeEngine {
 
     // Default Preset Scripts
     this.presets = {
-      // 1. User-Requested Default Autonomous Obstacle Avoidance Template
+      // 1. User-Requested Default Autonomous Cargo Retrieval & Transport
       default_avoidance: `/**
- * ROBO-ROARZ AUTONOMOUS OBSTACLE AVOIDANCE & MORPHING
+ * SMORPHI AUTONOMOUS CARGO RETRIEVAL & TRANSPORT
  * ----------------------------------------------------
+ * Platform: Single-Block Smorphi with Front Cargo Mesh Scoop
  * Inputs:
- *   - sensors.lidar: 360-deg laser array (ranges, .getFront(), .getLeft(), .getRight())
+ *   - sensors.cargo: { count, totalMassKg, hasContact, frontClearance, cubes: [...] }
+ *   - sensors.lidar: 360-deg laser array (.getFront(), .getLeft(), .getRight())
  *   - sensors.imu:   { heading, yaw_rate }
- *   - sensors.pose:  { x, y, theta }
- *   - sensors.shape: Active shape ("O", "I", "L", "T", "Z", "S")
+ *   - sensors.pose:  { x, y, theta, comOffsetX, totalMass }
  *   - sensors.target:{ distance, angle, reached }
  *
  * Outputs:
- *   - robot.setVelocity(vx, vy, omega): Set holonomic speed (m/s, rad/s)
- *   - robot.setShape(shape): Morph into "I" | "O" | "L" | "T" | "Z" | "S"
+ *   - robot.setVelocity(vx, vy, omega): Set 3-DOF holonomic speed (m/s, rad/s)
+ *   - robot.getLoadedMass(): Total mass in kg
  *   - robot.log(message): Output text to simulator console
  */
 
 // Initialize state machine
 if (!memory.initialized) {
-  memory.state = "CRUISE";
-  memory.dodgeDirection = 1; // 1 = Left, -1 = Right
-  memory.stuckTimer = 0;
+  memory.state = "SEARCH_CARGO";
   memory.initialized = true;
-  robot.setShape("O"); // Start with standard stable 2x2 shape
-  robot.log("RoboRoarZ Autonomous Script Initialized.");
+  robot.log("=== Smorphi Cargo Retrieval Mission Started ===");
 }
 
-// 1. Read LiDAR Distance Sectors
-const frontDist = sensors.lidar.getFront(30);  // Min dist in [-30°, +30°]
-const leftDist  = sensors.lidar.getLeft(40);   // Min dist on left flank
-const rightDist = sensors.lidar.getRight(40);  // Min dist on right flank
-const backDist  = sensors.lidar.getBack(30);
+const frontDist = sensors.lidar.getFront(25);
+const leftDist  = sensors.lidar.getLeft(35);
+const rightDist = sensors.lidar.getRight(35);
+const cargo     = sensors.cargo;
 
-// 2. Narrow Corridor Detection Logic
-// If both left and right walls are close (< 0.38m), we are entering a narrow passage!
-const isNarrowCorridor = (leftDist < 0.38 && rightDist < 0.38);
-
-if (isNarrowCorridor) {
-  if (sensors.shape !== "I") {
-    robot.log(">>> Narrow corridor detected! Morphing to streamlined 'I' shape...");
-    robot.setShape("I");
-  }
-  // Drive forward slowly and smoothly through the corridor
-  const lateralCorrection = (leftDist - rightDist) * 0.4;
-  robot.setVelocity(0.20, lateralCorrection, 0.0);
+// Cek jika finish point sudah tercapai
+if ((sensors.mission && sensors.mission.completed) || sensors.target.reached) {
+  robot.setVelocity(0, 0, 0);
   return;
 }
 
-// 3. Front Obstacle Avoidance Logic (< 0.6 m threshold)
-if (frontDist < 0.60) {
-  memory.stuckTimer += dt;
+// JIKA SEMUA 3 KUBUS SUDAH TERKUMPUL, MENUJU ZONA FINIS (PASSIVE GOAL)
+if (cargo.count >= 3) {
+  if (Math.random() < 0.01) {
+    robot.log(\`Muatan Penuh (3/3) [\${cargo.totalMassKg.toFixed(2)} kg]. Menuju zona akhir...\`);
+  }
 
-  // Decide bypass direction based on open space
-  if (leftDist > rightDist) {
-    memory.dodgeDirection = 1; // Crab/turn left
+  // Hindari rintangan sambil bergerak ke arah target finis
+  if (frontDist < 0.55) {
+    const dodge = leftDist > rightDist ? 0.28 : -0.28;
+    robot.setVelocity(-0.05, dodge, 0.6);
   } else {
-    memory.dodgeDirection = -1; // Crab/turn right
+    // Arahkan ke target passive goal
+    const targetAngle = sensors.target.angle;
+    const steer = Math.max(-1.0, Math.min(1.0, targetAngle * 1.5));
+    robot.setVelocity(0.30, 0.0, steer);
   }
+  return;
+}
 
-  // Use Mecanum Holonomic capability:
-  // Combine lateral strafing (crabbing) with slight reverse & rotation
-  const strafeSpeed = 0.25 * memory.dodgeDirection;
-  const turnSpeed = 1.2 * memory.dodgeDirection;
-  const reverseSpeed = frontDist < 0.30 ? -0.10 : 0.0;
+// STATE 1: PENCARIAN & PENDEKATAN KUBUS (SEARCH & APPROACH)
+if (memory.state === "SEARCH_CARGO") {
+  // Cari kubus terdekat yang belum terjaring
+  const target = cargo.cubes.find(c => c.state === "UNTOUCHED");
 
-  robot.setVelocity(reverseSpeed, strafeSpeed, turnSpeed);
+  if (target && target.dist < 2.0) {
+    // Hadapkan robot langsung ke arah kubus
+    const headingError = target.relAngle;
+    const turnSpeed = Math.max(-1.5, Math.min(1.5, headingError * 2.2));
 
-  if (Math.random() < 0.02) {
-    robot.log(\`Obstacle at \${frontDist.toFixed(2)}m -> Crabbing \${memory.dodgeDirection > 0 ? 'LEFT' : 'RIGHT'}\`);
+    // Bergerak mendekat dengan kecepatan proporsional
+    const fwdSpeed = target.dist > 0.40 ? 0.30 : 0.15;
+    robot.setVelocity(fwdSpeed, 0.0, turnSpeed);
+
+    if (target.dist < 0.25) {
+      memory.state = "SCOOP_ENGAGE";
+      robot.log(\`Mendekati kubus #\${target.id} (\${target.color}), menyapukan sekat...\`);
+    }
+  } else {
+    // Navigasi jelajah lorong arena
+    if (frontDist < 0.60) {
+      const dodge = leftDist > rightDist ? 0.25 : -0.25;
+      robot.setVelocity(0.0, dodge, 0.8 * Math.sign(dodge));
+    } else {
+      robot.setVelocity(0.35, 0.0, 0.0);
+    }
   }
-} else {
-  // Clear path ahead: Cruise forward at nominal speed
-  memory.stuckTimer = 0;
+}
 
-  // If in open space with shape "I", return to "O" for optimal turning stability
-  if (sensors.shape === "I" && leftDist > 0.65 && rightDist > 0.65) {
-    robot.log("Open area reached. Restoring 'O' shape.");
-    robot.setShape("O");
+// STATE 2: MENYAPU & MENGUNCI KUBUS KE DALAM SEKAT JARING (SCOOP ENGAGE)
+else if (memory.state === "SCOOP_ENGAGE") {
+  // Dorong lurus ke depan agar kubus melewati bibir penahan bawah sekat
+  robot.setVelocity(0.20, 0.0, 0.0);
+
+  if (cargo.hasContact || cargo.frontClearance < 0.05) {
+    robot.log(\`Kubus berhasil ditampung! Beban saat ini: \${cargo.totalMassKg.toFixed(2)} kg (\${cargo.count}/3)\`);
+    memory.state = "SEARCH_CARGO";
   }
-
-  robot.setVelocity(0.35, 0.0, 0.0);
 }
 `,
 
-      // 2. Goal Seeking with Artificial Potential Field & Dynamic Morphing
+      // 2. Goal Seeking with Artificial Potential Field
       goal_seeker: `/**
- * ROBO-ROARZ GOAL-SEEKING & RECONFIGURATION NAVIGATOR
- * Combines attractive goal vector with LiDAR repulsive obstacle forces.
+ * ROBO-ROARZ POTENTIAL FIELD GOAL SEEKER
+ * Platform: Single-Block Smorphi
  */
 
 if (!memory.init) {
   memory.init = true;
-  robot.setShape("O");
   robot.log("Target Seeking Navigator Started!");
 }
 
@@ -117,22 +128,14 @@ const frontDist = sensors.lidar.getFront(35);
 const leftDist = sensors.lidar.getLeft(45);
 const rightDist = sensors.lidar.getRight(45);
 
-// Check if Goal Reached!
 if (target.reached) {
   robot.setVelocity(0, 0, 0);
-  robot.log("MISSION ACCOMPLISHED: Target Objective Reached!");
+  robot.log("Zona Target Tercapai!");
   return;
 }
 
-// Check for tight choke points on the way to goal
-if (leftDist < 0.35 && rightDist < 0.35) {
-  robot.setShape("I"); // Morph to squeeze through
-} else if (sensors.shape === "I" && leftDist > 0.6 && rightDist > 0.6) {
-  robot.setShape("O");
-}
-
 // 1. Attractive force towards target
-let targetAngle = target.angle; // radians relative to heading
+let targetAngle = target.angle;
 let attractiveVx = Math.cos(targetAngle) * 0.32;
 let attractiveVy = Math.sin(targetAngle) * 0.32;
 
@@ -143,7 +146,6 @@ let repulseVy = 0;
 if (frontDist < 0.65) {
   const urgency = (0.65 - frontDist) / 0.65;
   repulseVx -= urgency * 0.45;
-  // Push toward clearer side
   if (leftDist > rightDist) {
     repulseVy += urgency * 0.35;
   } else {
@@ -151,71 +153,44 @@ if (frontDist < 0.65) {
   }
 }
 
-// Combine forces for Mecanum holonomic locomotion
-let vx = attractiveVx + repulseVx;
-let vy = attractiveVy + repulseVy;
-let omega = targetAngle * 1.5; // Rotate to face target
+let cmdVx = attractiveVx + repulseVx;
+let cmdVy = attractiveVy + repulseVy;
+let cmdOmega = targetAngle * 0.8;
 
-// Keep rotation smooth
-omega = Math.max(-2.0, Math.min(2.0, omega));
-
-robot.setVelocity(vx, vy, omega);
+robot.setVelocity(cmdVx, cmdVy, cmdOmega);
 `,
 
-      // 3. Mecanum Holonomic Omnidirectional Strafe Demo
+      // 3. Mecanum Holonomic Orbit (No-Turn)
       holonomic_drift: `/**
- * MECANUM HOLONOMIC DRIFT & ORBIT DEMO
- * Demonstrates 3-DOF crabbing (lateral motion) without turning heading!
+ * MECANUM HOLONOMIC ORBIT DEMO
+ * Demonstrates 3-DOF lateral strafing without altering robot heading.
  */
 
-if (!memory.t) {
-  memory.t = 0;
-  robot.setShape("O");
-  robot.log("Holonomic Mecanum Strafe Demo Initialized.");
-}
+if (!memory.timer) memory.timer = 0;
+memory.timer += dt;
 
-memory.t += dt;
+const phase = (memory.timer % 4.0) / 4.0;
+const angle = phase * Math.PI * 2;
 
-// Circular drift trajectory:
-// Moves sideways and forward while keeping heading fixed at 0 rad!
-const speed = 0.28;
-const vx = Math.cos(memory.t * 0.8) * speed;
-const vy = Math.sin(memory.t * 0.8) * speed;
+// Move along a circle in local frame without rotating
+const vx = Math.cos(angle) * 0.30;
+const vy = Math.sin(angle) * 0.30;
 
-// Check front LiDAR
-if (sensors.lidar.getFront(25) < 0.4) {
-  robot.setVelocity(-0.15, vy, 0);
-} else {
-  robot.setVelocity(vx, vy, 0.0); // Zero rotation! Pure holonomic translation!
-}
+robot.setVelocity(vx, vy, 0.0);
 `,
 
-      // 4. Wall Follower (PID)
+      // 4. PID Wall Follower
       wall_follower: `/**
- * PID RIGHT-WALL FOLLOWER
- * Maintains constant 0.38m distance to right wall using LiDAR
+ * PID WALL FOLLOWER (Single-Block Smorphi)
+ * Maintains constant 0.35m distance from the right wall.
  */
 
-if (!memory.pid) {
-  memory.targetDist = 0.38;
-  memory.prevError = 0;
-  memory.integral = 0;
-  memory.pid = true;
-  robot.setShape("O");
-  robot.log("Right Wall Follower Initialized.");
-}
+const targetDist = 0.35;
+const currentDist = sensors.lidar.getRight(30);
 
-const frontDist = sensors.lidar.getFront(35);
-const rightDist = sensors.lidar.getRight(40);
+if (!memory.prevError) memory.prevError = 0;
 
-if (frontDist < 0.5) {
-  // Obstacle ahead: Turn left immediately
-  robot.setVelocity(0.05, 0.0, 1.5);
-  return;
-}
-
-// PD Controller on wall distance
-const error = rightDist - memory.targetDist;
+const error = targetDist - currentDist;
 const derivative = (error - memory.prevError) / dt;
 memory.prevError = error;
 
@@ -237,10 +212,8 @@ robot.setVelocity(0.28, 0.0, -steer);
     this.lastErrorMessage = null;
 
     try {
-      // Sandboxed function wrapping
-      // Arguments: sensors, robot, memory, dt
       this.compiledFunction = new Function("sensors", "robot", "memory", "dt", codeText);
-      this.memory = {}; // Reset persistent memory on fresh compile
+      this.memory = {};
       this.log("Code compiled successfully.");
       return { success: true };
     } catch (err) {
@@ -262,13 +235,15 @@ robot.setVelocity(0.28, 0.0, -steer);
       return;
     }
 
-    // Safe robot controller proxy
     const robotAPI = {
       setVelocity: (vx, vy, omega) => {
         robot.setVelocity(vx, vy, omega);
       },
       setShape: (shape) => {
-        return robot.setShape(shape);
+        return true;
+      },
+      getLoadedMass: () => {
+        return robot.getLoadedMass();
       },
       stop: () => {
         robot.stop();
@@ -284,7 +259,7 @@ robot.setVelocity(0.28, 0.0, -steer);
       this.hasError = true;
       this.lastErrorMessage = `Runtime Error: ${err.message}`;
       this.log(`[RUNTIME ERROR] ${err.message}`, "error");
-      robot.stop(); // Fail-safe stop
+      robot.stop();
     }
   }
 
@@ -293,7 +268,6 @@ robot.setVelocity(0.28, 0.0, -steer);
    */
   log(message, type = "info") {
     const now = performance.now();
-    // Throttle duplicate rapid logs
     if (type === "user" && now - this.lastLogTime < 50) return;
     this.lastLogTime = now;
 

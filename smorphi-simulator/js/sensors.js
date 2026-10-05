@@ -1,6 +1,7 @@
 /**
- * Sensor Emulation Suite: 360° 2D LiDAR Raycaster, 6-DOF IMU, and Odometry
- * Provides realistic sensor readouts and helper utilities for autonomous navigation algorithms.
+ * Sensor Emulation Suite: 360° 2D LiDAR Raycaster, 6-DOF IMU, Odometry, and Cargo Sensors
+ * Platform: Single-Block Smorphi Base Unit with Front Cargo Mesh Scoop
+ * Provides realistic readouts and API helpers for autonomous navigation scripts.
  */
 
 class SensorSuite {
@@ -32,9 +33,12 @@ class SensorSuite {
       vy: 0,
       omega: 0,
       totalDistance: 0,
+      comOffsetX: 0,
+      totalMass: CONFIG.ROBOT.MASS,
+      cargoCount: 0,
     };
 
-    // Target/Goal Tracker
+    // Target/Goal Tracker (Passive)
     this.target = {
       x: 0,
       y: 0,
@@ -43,13 +47,35 @@ class SensorSuite {
       angleDeg: 0,
       reached: false,
     };
+
+    // Cargo & Scoop Sensor State
+    this.cargo = {
+      count: 0,
+      totalMassKg: 0,
+      loadPercent: 0,
+      isFull: false,
+      hasContact: false,
+      frontClearance: 0.25,
+      comOffsetX: 0,
+      cubes: [],
+    };
+
+    // Mission & Finish State
+    this.mission = {
+      state: "RUNNING", // "RUNNING" | "FINISHED"
+      completed: false,
+      time: 0,
+      round: 1,
+    };
   }
 
   /**
-   * Update all sensors given current robot state
+   * Update all sensors given current robot state and cargo state
    * @param {SmorphiRobot} robot
+   * @param {CargoManager} [cargoManager]
+   * @param {object} [missionInfo]
    */
-  update(robot) {
+  update(robot, cargoManager = null, missionInfo = null) {
     // 1. Update 360-Degree LiDAR Raycasting
     this.updateLidar(robot);
 
@@ -59,8 +85,23 @@ class SensorSuite {
     // 3. Update Wheel Odometry
     this.updateOdometry(robot);
 
-    // 4. Update Target Objective Tracker
+    // 4. Update Target Objective Tracker (Passive)
     this.updateTarget(robot);
+
+    // 5. Update Cargo Sensor Readings
+    if (cargoManager) {
+      this.cargo = cargoManager.getTelemetrySummary(robot);
+    }
+
+    // 6. Update Mission & Finish Tracker
+    if (missionInfo) {
+      this.mission.state = missionInfo.state || "RUNNING";
+      this.mission.completed = missionInfo.state === "FINISHED" || this.target.reached;
+      this.mission.time = missionInfo.time || 0;
+      this.mission.round = missionInfo.round || 1;
+    } else {
+      this.mission.completed = this.target.reached;
+    }
   }
 
   /**
@@ -172,10 +213,13 @@ class SensorSuite {
     this.pose.vy = robot.vy;
     this.pose.omega = robot.omega;
     this.pose.totalDistance = robot.totalDistanceTraveled;
+    this.pose.comOffsetX = robot.comOffsetX;
+    this.pose.totalMass = robot.totalMass;
+    this.pose.cargoCount = robot.cargoCount;
   }
 
   /**
-   * Update relative target goal coordinates
+   * Update relative target goal coordinates (Passive beacon)
    */
   updateTarget(robot) {
     const gx = this.map.goal.x;
@@ -195,7 +239,7 @@ class SensorSuite {
     this.target.distance = dist;
     this.target.angle = relAngle;
     this.target.angleDeg = (relAngle * 180) / Math.PI;
-    this.target.reached = dist < 0.28;
+    this.target.reached = dist < 0.35;
   }
 
   /**
@@ -206,18 +250,15 @@ class SensorSuite {
 
     // Helper functions on LiDAR object for clean user scripting
     const lidarHelper = {
-      // Raw 360 distance array
       ranges: ranges,
 
       // Minimum distance in front sector [-rangeDeg, +rangeDeg]
       getFront: (rangeDeg = 30) => {
         let minDist = CONFIG.LIDAR.MAX_RANGE;
         const half = Math.min(179, Math.abs(rangeDeg));
-        // Check 0 to +half
         for (let a = 0; a <= half; a++) {
           if (ranges[a] < minDist) minDist = ranges[a];
         }
-        // Check 360-half to 359
         for (let a = 360 - half; a < 360; a++) {
           if (ranges[a] < minDist) minDist = ranges[a];
         }
@@ -276,11 +317,8 @@ class SensorSuite {
         }
         return minDist;
       },
-
-      // Index access fallback: sensors.lidar[0], sensors.lidar[90], etc.
     };
 
-    // Wrap with Proxy so users can access sensors.lidar[45] directly like an array
     const lidarProxy = new Proxy(lidarHelper, {
       get(target, prop) {
         if (prop in target) return target[prop];
@@ -297,8 +335,10 @@ class SensorSuite {
       lidar: lidarProxy,
       imu: { ...this.imu },
       pose: { ...this.pose },
-      shape: robot.currentShape,
-      isMorphing: robot.isMorphing,
+      cargo: { ...this.cargo },
+      mission: { ...this.mission },
+      shape: "SINGLE_BLOCK",
+      isMorphing: false,
       target: { ...this.target },
       collision: robot.inCollision,
     };
