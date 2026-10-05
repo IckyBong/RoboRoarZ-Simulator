@@ -129,21 +129,25 @@ class PhysicsEngine {
   }
 
   /**
-   * Separating Axis Theorem (SAT) between module OBB and obstacle box
+   * Separating Axis Theorem (SAT) between module OBB and obstacle box.
+   * Delegates to shared RobotGeometry when available, with inline fallback.
    */
   testOBBCollision(boxA, boxB) {
+    if (typeof RobotGeometry !== "undefined") {
+      return RobotGeometry.testOBBCollision(boxA, boxB);
+    }
+
+    // Inline fallback (same algorithm)
     const axes = [...boxA.axes, ...boxB.axes];
     let minOverlap = Infinity;
     let bestAxis = { x: 0, y: 0 };
 
     for (const axis of axes) {
-      // Normalize axis
       const len = Math.hypot(axis.x, axis.y);
       if (len === 0) continue;
       const nx = axis.x / len;
       const ny = axis.y / len;
 
-      // Project corners of Box A
       let minA = Infinity, maxA = -Infinity;
       for (const p of boxA.corners) {
         const proj = p.x * nx + p.y * ny;
@@ -151,7 +155,6 @@ class PhysicsEngine {
         if (proj > maxA) maxA = proj;
       }
 
-      // Project corners of Box B
       let minB = Infinity, maxB = -Infinity;
       for (const p of boxB.corners) {
         const proj = p.x * nx + p.y * ny;
@@ -159,18 +162,12 @@ class PhysicsEngine {
         if (proj > maxB) maxB = proj;
       }
 
-      // Check overlap
       const overlap = Math.min(maxA, maxB) - Math.max(minA, minB);
-      if (overlap <= 0) {
-        // Separating axis found! No collision
-        return { intersects: false };
-      }
+      if (overlap <= 0) return { intersects: false };
 
       if (overlap < minOverlap) {
         minOverlap = overlap;
         bestAxis = { x: nx, y: ny };
-
-        // Ensure normal points from Box B to Box A
         const dirX = boxA.cx - boxB.cx;
         const dirY = boxA.cy - boxB.cy;
         if (dirX * bestAxis.x + dirY * bestAxis.y < 0) {
@@ -180,11 +177,7 @@ class PhysicsEngine {
       }
     }
 
-    return {
-      intersects: true,
-      depth: minOverlap,
-      normal: bestAxis,
-    };
+    return { intersects: true, depth: minOverlap, normal: bestAxis };
   }
 }
 

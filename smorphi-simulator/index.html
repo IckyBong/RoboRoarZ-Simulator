@@ -408,7 +408,12 @@
 
           <div class="p-2.5 bg-cyan-950/30 rounded border border-cyan-500/20 text-[11px] text-cyan-300 flex items-start gap-2">
             <i data-lucide="info" class="w-4 h-4 shrink-0 mt-0.5"></i>
-            <span>Validasi Peta otomatis (BFS Search) memastikan selalu ada jalur yang dapat dilalui dari spawn ke target.</span>
+            <span>Validasi Peta menggunakan A* pathfinding + SAT collision certification memastikan jalur yang dihasilkan dapat dilalui robot secara fisik.</span>
+          </div>
+
+          <!-- Map Generation Debug Info -->
+          <div id="map-gen-debug" class="p-2.5 bg-slate-900 rounded border border-slate-800 text-slate-300">
+            <div class="text-[11px] font-mono text-slate-500">Generate map to see validation info...</div>
           </div>
         </div>
 
@@ -508,6 +513,7 @@
   <!-- SIMULATOR JAVASCRIPT BUNDLE -->
   <script src="js/config.js"></script>
   <script src="js/smorphi.js"></script>
+  <script src="js/geometry.js"></script>
   <script src="js/map.js"></script>
   <script src="js/physics.js"></script>
   <script src="js/sensors.js"></script>
