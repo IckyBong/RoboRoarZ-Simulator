@@ -129,6 +129,25 @@ const CONFIG = {
     HIGH: { label: "28.0% - Dense Maze & Tight Chokepoints", density: 0.28, minObstacles: 22, maxObstacles: 30, forceCorridors: true },
   },
 
+  // Map Generation Navigation Profile
+  // Conservative defaults for FIXED_O — easy to recalibrate after physical measurement
+  MAP_NAVIGATION: {
+    profile: "FIXED_O",        // Active navigation profile
+    shape: "O",                // Robot shape assumed during map validation
+
+    gridResolution: 100,       // 100×100 over 5×5 m = 5 cm cells
+    linearSafetyMargin: 0.04,  // 4 cm extra clearance on each side
+
+    minPassageWidth: 0.40,     // Fixed O footprint + safety margin
+    minTurningClearance: 0.52, // Safe turning envelope target
+
+    pathSampleSpacing: 0.025,  // 2.5 cm exact SAT collision certification
+    minStartGoalClearance: 0.55,
+
+    maxGenerationAttempts: 1000,
+    enableSeededGeneration: true,
+  },
+
   // Visual Theme Colors
   COLORS: {
     MODULES: [
