@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Smorphi RoboRoarZ Simulator - Autonomous Robotics & Morphing Platform</title>
+  <title>Smorphi RoboRoarZ Simulator - Single-Block &amp; Cargo Mesh Scoop Platform</title>
 
   <!-- Tailwind CSS CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
@@ -36,7 +36,7 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
 
-  <!-- Ace Editor CDN (Rock solid for online & offline file:// execution) -->
+  <!-- Ace Editor CDN -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/ace/1.32.7/ace.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/ace/1.32.7/mode-javascript.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/ace/1.32.7/theme-monokai.min.js"></script>
@@ -53,9 +53,9 @@
       <div>
         <div class="flex items-center space-x-2">
           <h1 class="text-sm font-bold tracking-wider text-white">SMORPHI ROBOROARZ SIMULATOR</h1>
-          <span class="px-1.5 py-0.5 text-[10px] font-mono bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 rounded">v2.4 AUTONOMOUS</span>
+          <span class="px-1.5 py-0.5 text-[10px] font-mono bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 rounded">v3.0 SINGLE-BLOCK</span>
         </div>
-        <p class="text-[11px] text-slate-400">Reconfigurable Modular Robot Platform &bull; 16-Mecanum Holonomic Kinematics</p>
+        <p class="text-[11px] text-slate-400">Smorphi Base Unit (170×170×315 mm) &bull; 4-Mecanum Holonomic &bull; Front Cargo Mesh Scoop</p>
       </div>
     </div>
 
@@ -143,15 +143,15 @@
         </label>
       </div>
 
-      <!-- Top Right Overlay: Active Shape Badge -->
+      <!-- Top Right Overlay: Active Cargo Payload Badge -->
       <div class="absolute top-3 right-3 z-10 flex items-center space-x-2 bg-slate-900/90 backdrop-blur-md px-3 py-1.5 rounded-lg border border-slate-800/90 shadow-lg">
-        <span class="text-xs text-slate-400">Morphology:</span>
-        <span id="active-shape-badge" class="px-2.5 py-1 text-xs font-mono font-bold rounded-md bg-cyan-500/20 text-cyan-400 border border-cyan-500/40">
-          SHAPE: O
+        <span class="text-xs text-slate-400">Payload:</span>
+        <span id="active-shape-badge" class="px-2.5 py-1 text-xs font-mono font-bold rounded-md bg-slate-800 text-slate-400 border border-slate-700">
+          SCOOP EMPTY (0/3)
         </span>
       </div>
 
-      <!-- Bottom Overlay: Simulation Control & Quick Shape Palette -->
+      <!-- Bottom Overlay: Simulation Control & Quick Cargo Action -->
       <div class="absolute bottom-3 left-3 right-3 flex items-center justify-between pointer-events-none z-10">
         <!-- Left: Sim Rate & Step -->
         <div class="flex items-center space-x-2 bg-slate-900/90 backdrop-blur-md px-3 py-2 rounded-lg border border-slate-800/90 shadow-lg pointer-events-auto">
@@ -179,16 +179,80 @@
           </button>
         </div>
 
-        <!-- Right: Instant Shape Shift Palette (7 Tetrominoes) -->
-        <div class="flex items-center space-x-1.5 bg-slate-900/90 backdrop-blur-md px-3 py-2 rounded-lg border border-slate-800/90 shadow-lg pointer-events-auto">
-          <span class="text-[11px] font-semibold text-slate-400 mr-1">Morph Shape:</span>
-          <button data-shape-target="I" class="w-7 h-7 text-xs font-mono font-bold bg-slate-800 hover:bg-cyan-600 rounded text-slate-200 hover:text-white border border-slate-700 transition-all" title="Straight Line 1x4 (Narrow Corridor)">I</button>
-          <button data-shape-target="O" class="w-7 h-7 text-xs font-mono font-bold bg-slate-800 hover:bg-cyan-600 rounded text-slate-200 hover:text-white border border-slate-700 transition-all" title="Square 2x2 (Standard)">O</button>
-          <button data-shape-target="L" class="w-7 h-7 text-xs font-mono font-bold bg-slate-800 hover:bg-cyan-600 rounded text-slate-200 hover:text-white border border-slate-700 transition-all" title="L-Shape">L</button>
-          <button data-shape-target="T" class="w-7 h-7 text-xs font-mono font-bold bg-slate-800 hover:bg-cyan-600 rounded text-slate-200 hover:text-white border border-slate-700 transition-all" title="T-Shape">T</button>
-          <button data-shape-target="Z" class="w-7 h-7 text-xs font-mono font-bold bg-slate-800 hover:bg-cyan-600 rounded text-slate-200 hover:text-white border border-slate-700 transition-all" title="Z-Shape">Z</button>
-          <button data-shape-target="S" class="w-7 h-7 text-xs font-mono font-bold bg-slate-800 hover:bg-cyan-600 rounded text-slate-200 hover:text-white border border-slate-700 transition-all" title="S-Shape">S</button>
-          <button data-shape-target="J" class="w-7 h-7 text-xs font-mono font-bold bg-slate-800 hover:bg-cyan-600 rounded text-slate-200 hover:text-white border border-slate-700 transition-all" title="J-Shape">J</button>
+        <!-- Right: Cargo Quick Actions -->
+        <div class="flex items-center space-x-2 bg-slate-900/90 backdrop-blur-md px-3 py-2 rounded-lg border border-slate-800/90 shadow-lg pointer-events-auto">
+          <span class="text-[11px] font-semibold text-slate-400 mr-1 flex items-center gap-1">
+            <i data-lucide="package" class="w-3.5 h-3.5 text-cyan-400"></i> Cargo:
+          </span>
+          <button id="btn-respawn-cubes" class="flex items-center space-x-1 px-2.5 py-1 bg-slate-800 hover:bg-cyan-600 rounded text-xs font-medium text-slate-200 hover:text-white border border-slate-700 transition-all" title="Respawn 3 Cargo Cubes at Safe Waypoints">
+            <i data-lucide="rotate-ccw" class="w-3 h-3"></i>
+            <span>Respawn Cubes</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- FINISH POINT REACHED MODAL (MISSION COMPLETE STATE) -->
+      <div id="finish-modal" class="hidden absolute inset-0 z-30 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4 transition-all duration-300">
+        <div class="bg-slate-900 border border-emerald-500/50 shadow-2xl shadow-emerald-500/20 rounded-2xl max-w-md w-full p-6 space-y-5 animate-in fade-in zoom-in-95 duration-200">
+          <!-- Modal Header -->
+          <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+            <div class="flex items-center space-x-3">
+              <div class="w-12 h-12 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center shadow-lg shadow-emerald-500/30 shrink-0">
+                <i data-lucide="trophy" class="w-6 h-6 text-white animate-bounce"></i>
+              </div>
+              <div>
+                <div class="flex items-center space-x-2">
+                  <h3 class="text-base font-bold text-white tracking-wide">FINISH POINT TERCAPAI!</h3>
+                  <span id="finish-round-badge" class="px-2 py-0.5 text-[10px] font-mono bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 rounded">BABAK 1</span>
+                </div>
+                <p id="finish-status-desc" class="text-xs text-slate-300 mt-0.5">Smorphi berhasil menyentuh garis akhir arena.</p>
+              </div>
+            </div>
+            <button id="btn-modal-close" class="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-all" title="Tutup Dialog">
+              <i data-lucide="x" class="w-4 h-4"></i>
+            </button>
+          </div>
+
+          <!-- Mission Statistics Cards -->
+          <div class="grid grid-cols-2 gap-2.5 text-xs font-mono">
+            <div class="bg-slate-950 p-2.5 rounded-lg border border-slate-800">
+              <span class="text-[10px] text-slate-400 block mb-0.5">MUATAN TERANGKUT:</span>
+              <span id="finish-cargo-stat" class="text-emerald-400 font-bold text-sm">3/3 Kubus (1.05 kg)</span>
+            </div>
+            <div class="bg-slate-950 p-2.5 rounded-lg border border-slate-800">
+              <span class="text-[10px] text-slate-400 block mb-0.5">WAKTU TEMPUH:</span>
+              <span id="finish-time-stat" class="text-cyan-400 font-bold text-sm">24.5 s</span>
+            </div>
+            <div class="bg-slate-950 p-2.5 rounded-lg border border-slate-800">
+              <span class="text-[10px] text-slate-400 block mb-0.5">JARAK TEMPUH:</span>
+              <span id="finish-dist-stat" class="text-amber-400 font-bold text-sm">6.12 m</span>
+            </div>
+            <div class="bg-slate-950 p-2.5 rounded-lg border border-slate-800">
+              <span class="text-[10px] text-slate-400 block mb-0.5">JUMLAH TABRAKAN:</span>
+              <span id="finish-hits-stat" class="text-slate-200 font-bold text-sm">0 Hits</span>
+            </div>
+          </div>
+
+          <!-- Auto-Repeat Countdown -->
+          <div class="flex items-center justify-between text-xs px-1">
+            <label class="flex items-center space-x-2 text-slate-300 cursor-pointer select-none">
+              <input type="checkbox" id="toggle-auto-repeat" class="rounded bg-slate-800 border-slate-700 text-emerald-500 focus:ring-0">
+              <span class="text-[11px]">Ulangi otomatis setelah 5 detik</span>
+            </label>
+            <span id="countdown-text" class="text-[11px] font-mono text-emerald-400 font-bold hidden">5s</span>
+          </div>
+
+          <!-- Action Buttons -->
+          <div class="flex items-center space-x-3 pt-2">
+            <button id="btn-modal-restart" class="flex-1 flex items-center justify-center space-x-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-semibold shadow-lg shadow-emerald-900/40 transition-all active:scale-95">
+              <i data-lucide="rotate-ccw" class="w-4 h-4"></i>
+              <span>Ulangi Simulasi</span>
+            </button>
+            <button id="btn-modal-next-round" class="flex-1 flex items-center justify-center space-x-2 px-4 py-2.5 bg-cyan-600 hover:bg-cyan-500 text-white rounded-lg text-xs font-semibold shadow-lg shadow-cyan-900/40 transition-all active:scale-95">
+              <i data-lucide="shuffle" class="w-4 h-4"></i>
+              <span>Babak Baru (Peta Baru)</span>
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -203,11 +267,11 @@
         </button>
         <button id="tab-btn-telemetry" class="tab-btn px-4 py-2 text-xs font-semibold text-slate-400 hover:text-slate-200 flex items-center space-x-1.5 transition-all" onclick="switchPanelTab('telemetry')">
           <i data-lucide="radar" class="w-4 h-4"></i>
-          <span>Telemetry & Radar</span>
+          <span>Telemetry &amp; Radar</span>
         </button>
         <button id="tab-btn-config" class="tab-btn px-4 py-2 text-xs font-semibold text-slate-400 hover:text-slate-200 flex items-center space-x-1.5 transition-all" onclick="switchPanelTab('config')">
           <i data-lucide="sliders" class="w-4 h-4"></i>
-          <span>Arena & Docs</span>
+          <span>Arena &amp; Docs</span>
         </button>
       </div>
 
@@ -218,7 +282,7 @@
           <div class="flex items-center space-x-2">
             <span class="text-slate-400">Template:</span>
             <select id="code-preset-select" class="bg-slate-800 text-cyan-400 font-medium text-xs rounded px-2 py-1 border border-slate-700 focus:outline-none focus:border-cyan-500">
-              <option value="default_avoidance">Autonomous Avoidance & Morphing (Default)</option>
+              <option value="default_avoidance">Autonomous Cargo Retrieval &amp; Transport (Default)</option>
               <option value="goal_seeker">RoboRoarZ Goal Seeker (Potential Field)</option>
               <option value="holonomic_drift">Mecanum Holonomic Orbit (No-Turn)</option>
               <option value="wall_follower">PID Wall Follower</option>
@@ -324,7 +388,7 @@
             <span class="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
               <i data-lucide="gauge" class="w-3.5 h-3.5 text-purple-400"></i> Kinematics Velocities (3-DOF)
             </span>
-            <span class="text-[10px] font-mono text-slate-400">16 Wheels</span>
+            <span class="text-[10px] font-mono text-slate-400">4 Mecanum Wheels</span>
           </div>
 
           <!-- Vx -->
@@ -361,10 +425,10 @@
           </div>
         </div>
 
-        <!-- Global Odometry & Goal Distance -->
+        <!-- Global Odometry & Cargo Scoop Payload Monitor -->
         <div class="bg-slate-950 p-3.5 rounded-xl border border-slate-800">
           <span class="text-xs font-semibold text-slate-300 flex items-center gap-1.5 mb-2">
-            <i data-lucide="map-pin" class="w-3.5 h-3.5 text-amber-400"></i> Global Odometry & Target
+            <i data-lucide="map-pin" class="w-3.5 h-3.5 text-amber-400"></i> Odometry &amp; Scoop Payload
           </span>
           <div class="grid grid-cols-2 gap-2 text-xs font-mono">
             <div class="bg-slate-900 p-2 rounded border border-slate-800">
@@ -394,7 +458,7 @@
             <i data-lucide="layers" class="w-3.5 h-3.5 text-cyan-400"></i> Randomized Map Generator
           </span>
           <p class="text-xs text-slate-400 leading-relaxed">
-            Menghasilkan peta acak dengan rintangan statis (kotak, pilar) dan lorong sempit khusus pengujian bentuk morfologi Smorphi.
+            Menghasilkan peta acak dengan rintangan statis (kotak, pilar) dan lorong penjelajahan dengan 3 kubus kargo fisik yang ditempatkan secara deterministik.
           </p>
 
           <div class="space-y-1.5">
@@ -408,7 +472,7 @@
 
           <div class="p-2.5 bg-cyan-950/30 rounded border border-cyan-500/20 text-[11px] text-cyan-300 flex items-start gap-2">
             <i data-lucide="info" class="w-4 h-4 shrink-0 mt-0.5"></i>
-            <span>Validasi Peta menggunakan A* pathfinding + SAT collision certification memastikan jalur yang dihasilkan dapat dilalui robot secara fisik.</span>
+            <span>Validasi Peta menggunakan A* pathfinding + SAT collision certification memastikan jalur labirin dapat dilalui robot dengan aman.</span>
           </div>
 
           <!-- Map Generation Debug Info -->
@@ -420,32 +484,32 @@
         <!-- Robot Smorphi Physical Specs Card -->
         <div class="bg-slate-950 p-3.5 rounded-xl border border-slate-800 space-y-2 text-xs">
           <span class="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
-            <i data-lucide="cpu" class="w-3.5 h-3.5 text-pink-400"></i> Spesifikasi Teknis Smorphi
+            <i data-lucide="cpu" class="w-3.5 h-3.5 text-pink-400"></i> Spesifikasi Teknis Smorphi Single-Block
           </span>
           <div class="space-y-1 text-slate-400 text-[11px]">
             <div class="flex justify-between py-1 border-b border-slate-800/60">
-              <span>Modular Structure:</span>
-              <span class="text-slate-200 font-mono">4 Blok (16×16×16 cm)</span>
+              <span>Footprint Fisik:</span>
+              <span class="text-slate-200 font-mono">170 × 170 mm (Tinggi: 315 mm)</span>
             </div>
             <div class="flex justify-between py-1 border-b border-slate-800/60">
-              <span>Massa Total:</span>
-              <span class="text-slate-200 font-mono">2.0 kg (500g / blok)</span>
+              <span>Massa Kosong:</span>
+              <span class="text-slate-200 font-mono">2.20 kg</span>
             </div>
             <div class="flex justify-between py-1 border-b border-slate-800/60">
-              <span>Konfigurasi Engsel:</span>
-              <span class="text-slate-200 font-mono">3 Engsel Motorized (LLR)</span>
+              <span>Sekat Jaring Depan:</span>
+              <span class="text-slate-200 font-mono">U-Mesh Scoop (190×140×85 mm)</span>
             </div>
             <div class="flex justify-between py-1 border-b border-slate-800/60">
-              <span>Morfologi Bentuk:</span>
-              <span class="text-slate-200 font-mono">7 Bentuk (I, O, L, T, Z, S, J)</span>
+              <span>Entitas Muatan:</span>
+              <span class="text-slate-200 font-mono">3 Cargo Cubes (90×90×90 mm, 350g)</span>
             </div>
             <div class="flex justify-between py-1 border-b border-slate-800/60">
               <span>Kinematika Roda:</span>
-              <span class="text-slate-200 font-mono">16 Roda Mecanum (3-DOF)</span>
+              <span class="text-slate-200 font-mono">4 Roda Mecanum (3-DOF Holonomik)</span>
             </div>
             <div class="flex justify-between py-1">
               <span>LiDAR Emulation:</span>
-              <span class="text-slate-200 font-mono">2D 360° (0.05 - 5.0m)</span>
+              <span class="text-slate-200 font-mono">2D 360° Planar (Top Tier: 285 mm)</span>
             </div>
           </div>
         </div>
@@ -457,20 +521,20 @@
           </span>
           <div class="space-y-2 text-[11px] font-mono text-slate-300">
             <div class="p-2 bg-slate-900 rounded border border-slate-800">
+              <span class="text-cyan-400 font-bold">sensors.cargo</span>
+              <p class="text-slate-400 text-[10px]">.count (0-3), .totalMassKg, .hasContact, .cubes array.</p>
+            </div>
+            <div class="p-2 bg-slate-900 rounded border border-slate-800">
               <span class="text-cyan-400 font-bold">sensors.lidar.getFront(deg)</span>
               <p class="text-slate-400 text-[10px]">Jarak minimum rintangan depan [-deg, +deg].</p>
             </div>
             <div class="p-2 bg-slate-900 rounded border border-slate-800">
-              <span class="text-cyan-400 font-bold">sensors.lidar.getLeft(deg) / getRight(deg)</span>
-              <p class="text-slate-400 text-[10px]">Jarak rintangan sektor kiri (90°) / kanan (270°).</p>
-            </div>
-            <div class="p-2 bg-slate-900 rounded border border-slate-800">
               <span class="text-purple-400 font-bold">robot.setVelocity(vx, vy, omega)</span>
-              <p class="text-slate-400 text-[10px]">vx = maju/mundur, vy = crabbing samping, omega = rotasi.</p>
+              <p class="text-slate-400 text-[10px]">vx = maju/mundur, vy = strafe lateral, omega = rotasi.</p>
             </div>
             <div class="p-2 bg-slate-900 rounded border border-slate-800">
-              <span class="text-pink-400 font-bold">robot.setShape("I" | "O" | "L" | "T" | "Z" | "S")</span>
-              <p class="text-slate-400 text-[10px]">Mengubah bentuk geometris modul Smorphi.</p>
+              <span class="text-pink-400 font-bold">robot.getLoadedMass()</span>
+              <p class="text-slate-400 text-[10px]">Mengembalikan bobot total robot + kargo aktif dalam kg.</p>
             </div>
             <div class="p-2 bg-slate-900 rounded border border-slate-800">
               <span class="text-emerald-400 font-bold">robot.log(pesan)</span>
@@ -512,8 +576,9 @@
 
   <!-- SIMULATOR JAVASCRIPT BUNDLE -->
   <script src="js/config.js"></script>
-  <script src="js/smorphi.js"></script>
   <script src="js/geometry.js"></script>
+  <script src="js/smorphi.js"></script>
+  <script src="js/cargo.js"></script>
   <script src="js/map.js"></script>
   <script src="js/physics.js"></script>
   <script src="js/sensors.js"></script>

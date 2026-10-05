@@ -1,7 +1,8 @@
 /**
  * Smorphi Robotics Simulator - Main Application Controller
- * Coordinates physics, 3D viewport, sensor raycasting, Code Editor,
- * Telemetry HUD, audio synthesis, and event handlers.
+ * Platform: Single-Block Smorphi Base Unit with Front Cargo Mesh Scoop
+ * Coordinates physics, 3D viewport, sensor raycasting, CargoManager,
+ * Code Editor, Telemetry HUD, audio synthesis, Finish Point state & Replay mechanism.
  */
 
 class SmorphiApp {
@@ -13,6 +14,14 @@ class SmorphiApp {
     this.keysDown = {};
     this.audioEnabled = true;
 
+    // Mission State & Finish Management
+    this.missionState = "RUNNING"; // "RUNNING" | "FINISHED"
+    this.missionTime = 0.0;
+    this.roundNumber = 1;
+    this.autoRepeatEnabled = false;
+    this.autoRepeatTimer = null;
+    this.autoRepeatCountdown = 5;
+
     // Timing
     this.lastFrameTime = performance.now();
     this.simTime = 0.0;
@@ -22,6 +31,9 @@ class SmorphiApp {
 
     // Instantiate Core Subsystems
     this.map = new ArenaMap(CONFIG.ARENA.WIDTH, CONFIG.ARENA.HEIGHT);
+    this.cargo = new CargoManager();
+    this.cargo.spawnCubes(this.map);
+
     this.robot = new SmorphiRobot(this.map.spawn.x, this.map.spawn.y, 0);
     this.physics = new PhysicsEngine(this.map);
     this.sensors = new SensorSuite(this.map);
@@ -46,8 +58,8 @@ class SmorphiApp {
     this.setupUIEventListeners();
     this.setupKeyboardListeners();
 
-    // Initial sensor scan
-    this.sensors.update(this.robot);
+    // Initial sensor scan & telemetry update
+    this.sensors.update(this.robot, this.cargo, { state: this.missionState, time: this.missionTime, round: this.roundNumber });
     this.telemetry.update(this.robot, this.sensors, this.map);
 
     // Initial code compilation of default template
@@ -57,7 +69,7 @@ class SmorphiApp {
 
     // Start Simulation Loop
     requestAnimationFrame((t) => this.simulationLoop(t));
-    console.log("[SmorphiApp] Simulator initialized successfully.");
+    console.log("[SmorphiApp] Single-Block Simulator initialized successfully.");
   }
 
   /**
@@ -118,7 +130,6 @@ class SmorphiApp {
 
       consoleLogsContainer.appendChild(line);
 
-      // Keep last 150 entries
       while (consoleLogsContainer.childNodes.length > 150) {
         consoleLogsContainer.removeChild(consoleLogsContainer.firstChild);
       }
@@ -134,7 +145,7 @@ class SmorphiApp {
   }
 
   /**
-   * Wire buttons, sliders, camera switches, and presets
+   * Wire buttons, sliders, camera switches, modal actions, and presets
    */
   setupUIEventListeners() {
     // 1. Code Editor Actions
@@ -152,6 +163,9 @@ class SmorphiApp {
         if (res.success) {
           this.codeEngine.start();
           this.manualControlEnabled = false;
+          if (this.missionState === "FINISHED") {
+            this.restartSimulation(true);
+          }
           this.updateModeIndicator("AUTONOMOUS");
           this.playBeep(650, 0.1, "sine");
         }
@@ -162,39 +176,38 @@ class SmorphiApp {
       btnStop.addEventListener("click", () => {
         this.codeEngine.stop();
         this.robot.stop();
-        this.updateModeIndicator("STOPPED / PAUSED");
+        this.updateModeIndicator("STOPPED");
       });
     }
 
     if (btnResetCode) {
       btnResetCode.addEventListener("click", () => {
-        if (this.editor) {
-          this.editor.setValue(this.codeEngine.presets.default_avoidance, -1);
-          this.codeEngine.compileScript(this.editor.getValue());
-          this.codeEngine.log("Editor reset to default Obstacle Avoidance template.");
+        const val = presetSelect ? presetSelect.value : "default_avoidance";
+        if (this.editor && this.codeEngine.presets[val]) {
+          this.editor.setValue(this.codeEngine.presets[val], -1);
+          this.codeEngine.log("Editor reset to selected template.");
         }
       });
     }
 
     if (presetSelect) {
       presetSelect.addEventListener("change", (e) => {
-        const val = e.target.value;
-        if (this.codeEngine.presets[val] && this.editor) {
-          this.editor.setValue(this.codeEngine.presets[val], -1);
-          this.codeEngine.compileScript(this.editor.getValue());
-          this.codeEngine.log(`Loaded preset template: ${val}`);
+        const key = e.target.value;
+        if (this.editor && this.codeEngine.presets[key]) {
+          this.editor.setValue(this.codeEngine.presets[key], -1);
+          this.codeEngine.log(`Loaded template: ${key}`);
         }
       });
     }
 
     if (btnClearConsole) {
       btnClearConsole.addEventListener("click", () => {
-        const c = document.getElementById("console-logs");
-        if (c) c.innerHTML = "";
+        const consoleLogsContainer = document.getElementById("console-logs");
+        if (consoleLogsContainer) consoleLogsContainer.innerHTML = "";
       });
     }
 
-    // 2. Simulation Environment Controls
+    // 2. Map Generation & Simulation Controls
     const btnNewMap = document.getElementById("btn-new-map");
     const densitySelect = document.getElementById("map-density-select");
     const btnResetRobot = document.getElementById("btn-reset-robot");
@@ -204,27 +217,19 @@ class SmorphiApp {
 
     if (btnNewMap) {
       btnNewMap.addEventListener("click", () => {
-        const density = densitySelect ? densitySelect.value : "MEDIUM";
-        this.map.generateMap(density);
-        this.view3d.rebuildObstacleMeshes();
-        this.robot.resetPose(this.map.spawn.x, this.map.spawn.y, 0);
-        this.codeEngine.resetMemory();
-        this.codeEngine.log(`New arena generated [Density: ${density}]`);
-        this.playBeep(440, 0.1, "triangle");
+        this.restartSimulation(false);
       });
     }
 
     if (densitySelect) {
       densitySelect.addEventListener("change", () => {
-        if (btnNewMap) btnNewMap.click();
+        this.restartSimulation(false);
       });
     }
 
     if (btnResetRobot) {
       btnResetRobot.addEventListener("click", () => {
-        this.robot.resetPose(this.map.spawn.x, this.map.spawn.y, 0);
-        this.codeEngine.resetMemory();
-        this.codeEngine.log("Robot pose reset to spawn.");
+        this.restartSimulation(true);
       });
     }
 
@@ -261,21 +266,7 @@ class SmorphiApp {
       });
     });
 
-    // 4. Manual Morphology Selector Buttons
-    const shapeButtons = document.querySelectorAll("[data-shape-target]");
-    shapeButtons.forEach((btn) => {
-      btn.addEventListener("click", () => {
-        const shape = btn.getAttribute("data-shape-target");
-        this.initAudio();
-        const ok = this.robot.setShape(shape);
-        if (ok) {
-          this.codeEngine.log(`Manual shape shift -> ${shape}`);
-          this.playServoSound();
-        }
-      });
-    });
-
-    // 5. Visual Toggles (LiDAR Beams, Trail, Sound)
+    // 4. Visual Toggles (LiDAR Beams, Trail, Sound)
     const toggleLidar = document.getElementById("toggle-lidar-beams");
     if (toggleLidar) {
       toggleLidar.addEventListener("change", (e) => {
@@ -297,55 +288,89 @@ class SmorphiApp {
       });
     }
 
-    // 6. Manual Teleop Mode Toggle
+    // 5. Manual Teleop Mode Toggle
     const btnTeleop = document.getElementById("btn-manual-teleop");
     if (btnTeleop) {
       btnTeleop.addEventListener("click", () => {
+        this.initAudio();
         this.manualControlEnabled = !this.manualControlEnabled;
         if (this.manualControlEnabled) {
           this.codeEngine.stop();
-          this.updateModeIndicator("MANUAL TELEOP (WASD + Q/E)");
+          this.updateModeIndicator("MANUAL (WASD)");
           btnTeleop.classList.add("bg-amber-600", "text-white");
-          btnTeleop.classList.remove("bg-slate-800");
+          btnTeleop.classList.remove("bg-slate-800", "text-amber-300");
+          this.codeEngine.log("Manual keyboard teleoperation enabled (WASD + Q/E).");
         } else {
           this.robot.stop();
           this.updateModeIndicator("IDLE");
           btnTeleop.classList.remove("bg-amber-600", "text-white");
-          btnTeleop.classList.add("bg-slate-800");
+          btnTeleop.classList.add("bg-slate-800", "text-amber-300");
+        }
+      });
+    }
+
+    // 6. Quick Respawn Cargo Cubes Button
+    const btnRespawnCubes = document.getElementById("btn-respawn-cubes");
+    if (btnRespawnCubes) {
+      btnRespawnCubes.addEventListener("click", () => {
+        this.cargo.spawnCubes(this.map);
+        this.codeEngine.log("Cargo Cubes respawned at safe waypoints.");
+        this.playBeep(520, 0.1, "sine");
+      });
+    }
+
+    // 7. Finish Modal Action Buttons (Repeat / Next Round)
+    const btnModalRestart = document.getElementById("btn-modal-restart");
+    if (btnModalRestart) {
+      btnModalRestart.addEventListener("click", () => {
+        this.restartSimulation(true);
+      });
+    }
+
+    const btnModalNextRound = document.getElementById("btn-modal-next-round");
+    if (btnModalNextRound) {
+      btnModalNextRound.addEventListener("click", () => {
+        this.restartSimulation(false);
+      });
+    }
+
+    const btnModalClose = document.getElementById("btn-modal-close");
+    if (btnModalClose) {
+      btnModalClose.addEventListener("click", () => {
+        this.clearAutoRepeatTimer();
+        const modal = document.getElementById("finish-modal");
+        if (modal) modal.classList.add("hidden");
+      });
+    }
+
+    const toggleAutoRepeat = document.getElementById("toggle-auto-repeat");
+    if (toggleAutoRepeat) {
+      toggleAutoRepeat.addEventListener("change", (e) => {
+        this.autoRepeatEnabled = e.target.checked;
+        if (this.missionState === "FINISHED") {
+          if (this.autoRepeatEnabled) {
+            this.startAutoRepeatCountdown();
+          } else {
+            this.clearAutoRepeatTimer();
+          }
         }
       });
     }
   }
 
-  updateModeIndicator(text) {
-    const el = document.getElementById("sim-status-mode");
-    if (el) {
-      el.textContent = text;
-      if (text.includes("AUTONOMOUS")) {
-        el.className = "px-2.5 py-1 text-xs font-mono font-bold rounded-md bg-emerald-500/20 text-emerald-400 border border-emerald-500/40";
-      } else if (text.includes("MANUAL")) {
-        el.className = "px-2.5 py-1 text-xs font-mono font-bold rounded-md bg-amber-500/20 text-amber-400 border border-amber-500/40";
-      } else {
-        el.className = "px-2.5 py-1 text-xs font-mono font-bold rounded-md bg-slate-700/40 text-slate-400 border border-slate-600/40";
-      }
-    }
-  }
-
   /**
-   * Keyboard controls for manual teleoperation and quick shape testing
+   * Listen to Keyboard events for 3-DOF Holonomic Manual Driving
    */
   setupKeyboardListeners() {
     window.addEventListener("keydown", (e) => {
-      // Don't intercept typing if user is focused inside code editor
-      if (this.editor && this.editor.isFocused()) return;
-
       this.keysDown[e.key.toLowerCase()] = true;
 
-      // Quick Shape Switching via numeric keys 1-7
-      const shapeKeys = { "1": "I", "2": "O", "3": "L", "4": "T", "5": "Z", "6": "S", "7": "J" };
-      if (shapeKeys[e.key]) {
-        this.robot.setShape(shapeKeys[e.key]);
-        this.playServoSound();
+      if (e.code === "Space") {
+        this.robot.stop();
+        if (this.codeEngine.isRunning) {
+          this.codeEngine.stop();
+          this.updateModeIndicator("STOPPED");
+        }
       }
     });
 
@@ -355,7 +380,7 @@ class SmorphiApp {
   }
 
   /**
-   * Process manual Mecanum locomotion if teleoperation active
+   * Process WASD + Q/E Keyboard Inputs for 3-DOF Holonomic Control
    */
   processManualInput() {
     if (!this.manualControlEnabled) return;
@@ -363,39 +388,49 @@ class SmorphiApp {
     let vx = 0;
     let vy = 0;
     let omega = 0;
+    const maxLin = CONFIG.ROBOT.MAX_LINEAR_SPEED;
+    const maxAng = CONFIG.ROBOT.MAX_ANGULAR_SPEED;
 
-    const maxLin = 0.45;
-    const maxAng = 2.0;
-
-    // W/S: Forward / Backward (vx)
     if (this.keysDown["w"] || this.keysDown["arrowup"]) vx += maxLin;
     if (this.keysDown["s"] || this.keysDown["arrowdown"]) vx -= maxLin;
 
-    // A/D: Lateral Crabbing / Strafing (vy)
     if (this.keysDown["a"] || this.keysDown["arrowleft"]) vy += maxLin;
     if (this.keysDown["d"] || this.keysDown["arrowright"]) vy -= maxLin;
 
-    // Q/E: In-place Rotation (omega)
     if (this.keysDown["q"]) omega += maxAng;
     if (this.keysDown["e"]) omega -= maxAng;
 
     this.robot.setVelocity(vx, vy, omega);
   }
 
+  updateModeIndicator(modeText) {
+    const el = document.getElementById("sim-status-mode");
+    if (!el) return;
+    el.textContent = modeText;
+
+    if (modeText === "AUTONOMOUS") {
+      el.className = "px-2.5 py-1 text-xs font-mono font-bold rounded-md bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 animate-pulse";
+    } else if (modeText === "MANUAL (WASD)") {
+      el.className = "px-2.5 py-1 text-xs font-mono font-bold rounded-md bg-amber-500/20 text-amber-400 border border-amber-500/40";
+    } else if (modeText.includes("FINISH") || modeText.includes("REACHED")) {
+      el.className = "px-2.5 py-1 text-xs font-mono font-bold rounded-md bg-emerald-500 text-white shadow-lg shadow-emerald-500/40 animate-pulse";
+    } else if (modeText.includes("ERROR")) {
+      el.className = "px-2.5 py-1 text-xs font-mono font-bold rounded-md bg-red-500/20 text-red-400 border border-red-500/40";
+    } else {
+      el.className = "px-2.5 py-1 text-xs font-mono font-bold rounded-md bg-slate-800 text-slate-400 border border-slate-700";
+    }
+  }
+
   /**
-   * Main Simulation & Animation Loop
+   * Main 60 FPS RequestAnimationFrame Loop
    */
   simulationLoop(currentTime) {
     requestAnimationFrame((t) => this.simulationLoop(t));
 
-    // Calculate real frame delta
-    let dt = (currentTime - this.lastFrameTime) / 1000;
+    const dt = Math.min((currentTime - this.lastFrameTime) / 1000, 0.1);
     this.lastFrameTime = currentTime;
 
-    // Clamp dt to avoid huge physics leaps on tab backgrounding
-    if (dt > 0.1) dt = 0.1;
-
-    // FPS calculation
+    // FPS Meter
     this.frameCount++;
     if (currentTime - this.lastFpsUpdate > 500) {
       this.fps = Math.round((this.frameCount * 1000) / (currentTime - this.lastFpsUpdate));
@@ -410,44 +445,190 @@ class SmorphiApp {
       this.stepSimulation(scaledDt);
     }
 
-    // Always render 3D View and Telemetry
-    this.view3d.update(this.robot, this.sensors, dt);
+    // Render 3D View and Telemetry
+    const isGoalReached = this.missionState === "FINISHED" || (this.sensors.target && this.sensors.target.reached);
+    this.view3d.update(this.robot, this.sensors, dt, this.cargo, isGoalReached);
     this.telemetry.update(this.robot, this.sensors, this.map);
   }
 
   /**
-   * Step physics, execute code, and update sensors
+   * Step physics, execute code, update sensors, and check finish condition
    */
   stepSimulation(dt) {
     this.simTime += dt;
+
+    if (this.missionState === "RUNNING") {
+      this.missionTime += dt;
+    }
 
     // 1. Process Manual Keyboard input (if enabled)
     this.processManualInput();
 
     // 2. Read Sensors before script execution
-    this.sensors.update(this.robot);
+    this.sensors.update(this.robot, this.cargo, { state: this.missionState, time: this.missionTime, round: this.roundNumber });
 
-    // 3. Execute Autonomous Script (if running)
+    // 3. Execute Autonomous Script (if running and mission not finished)
     if (this.codeEngine.isRunning) {
       const scriptSensors = this.sensors.getScriptInput(this.robot);
       this.codeEngine.executeTick(scriptSensors, this.robot, dt);
 
-      // Check if code threw runtime error
       if (this.codeEngine.hasError) {
         this.updateModeIndicator("ERROR IN CODE");
       }
     }
 
     // 4. Run Physics & Multi-Body Collision Detection
-    this.physics.step(this.robot, dt);
+    this.physics.step(this.robot, dt, this.cargo);
 
     // 5. Sound trigger on collision
     if (this.robot.inCollision && Math.random() < 0.08) {
       this.playCollisionSound();
     }
+
+    // 6. Check Finish Point Condition
+    if (this.missionState === "RUNNING") {
+      const dx = this.robot.x - this.map.goal.x;
+      const dy = this.robot.y - this.map.goal.y;
+      const distToGoal = Math.hypot(dx, dy);
+
+      if (distToGoal < 0.38) {
+        this.handleFinishReached();
+      }
+    }
   }
 
-  // --- Audio Synthesis Engine (Zero dependencies) ---
+  /**
+   * Transition to FINISH_REACHED State, log stats, show modal, and handle repeat
+   */
+  handleFinishReached() {
+    this.missionState = "FINISHED";
+    this.robot.stop();
+    this.updateModeIndicator("FINISH REACHED!");
+    this.playVictoryFanfare();
+
+    const capturedCount = this.cargo.cubes.filter(c => c.state === "CAPTURED_INSIDE_MESH").length;
+    const cargoMass = (capturedCount * CONFIG.CARGO.MASS).toFixed(2);
+    const duration = this.missionTime.toFixed(1);
+    const dist = this.robot.totalDistanceTraveled.toFixed(2);
+    const hits = this.robot.collisionCount;
+
+    // Log to simulator console
+    this.codeEngine.log(`🏁 [FINISH POINT TERCAPAI] Babak #${this.roundNumber} sukses dalam ${duration}s! Kargo: ${capturedCount}/3 (${cargoMass} kg).`);
+
+    // Populate Modal
+    const roundBadge = document.getElementById("finish-round-badge");
+    if (roundBadge) roundBadge.textContent = `BABAK ${this.roundNumber}`;
+
+    const descEl = document.getElementById("finish-status-desc");
+    if (descEl) {
+      if (capturedCount === 3) {
+        descEl.textContent = "🌟 MISI SEMPURNA! Seluruh 3 kubus muatan berhasil diangkut ke finish point.";
+      } else if (capturedCount > 0) {
+        descEl.textContent = `⭐ MISI BERHASIL! ${capturedCount} dari 3 kubus muatan berhasil diantar ke finish point.`;
+      } else {
+        descEl.textContent = "🏁 FINISH POINT TERCAPAI! Smorphi sampai di titik akhir tanpa membawa kargo.";
+      }
+    }
+
+    const statCargo = document.getElementById("finish-cargo-stat");
+    if (statCargo) statCargo.textContent = `${capturedCount}/3 Kubus (${cargoMass} kg)`;
+
+    const statTime = document.getElementById("finish-time-stat");
+    if (statTime) statTime.textContent = `${duration} s`;
+
+    const statDist = document.getElementById("finish-dist-stat");
+    if (statDist) statDist.textContent = `${dist} m`;
+
+    const statHits = document.getElementById("finish-hits-stat");
+    if (statHits) statHits.textContent = `${hits} Hits`;
+
+    // Show modal
+    const modal = document.getElementById("finish-modal");
+    if (modal) {
+      modal.classList.remove("hidden");
+      if (window.lucide) lucide.createIcons();
+    }
+
+    // Auto-repeat trigger if checked
+    if (this.autoRepeatEnabled) {
+      this.startAutoRepeatCountdown();
+    }
+  }
+
+  /**
+   * Start 5-second automatic countdown to replay
+   */
+  startAutoRepeatCountdown() {
+    this.clearAutoRepeatTimer();
+    this.autoRepeatCountdown = 5;
+    const countdownEl = document.getElementById("countdown-text");
+    if (countdownEl) {
+      countdownEl.classList.remove("hidden");
+      countdownEl.textContent = `${this.autoRepeatCountdown}s`;
+    }
+
+    this.autoRepeatTimer = setInterval(() => {
+      this.autoRepeatCountdown--;
+      if (countdownEl) countdownEl.textContent = `${this.autoRepeatCountdown}s`;
+
+      if (this.autoRepeatCountdown <= 0) {
+        this.clearAutoRepeatTimer();
+        this.restartSimulation(true);
+      }
+    }, 1000);
+  }
+
+  clearAutoRepeatTimer() {
+    if (this.autoRepeatTimer) {
+      clearInterval(this.autoRepeatTimer);
+      this.autoRepeatTimer = null;
+    }
+    const countdownEl = document.getElementById("countdown-text");
+    if (countdownEl) countdownEl.classList.add("hidden");
+  }
+
+  /**
+   * Replay / Reset simulation
+   * @param {boolean} sameMap - true to repeat on current arena, false to generate new maze
+   */
+  restartSimulation(sameMap = true) {
+    this.clearAutoRepeatTimer();
+
+    // Hide modal
+    const modal = document.getElementById("finish-modal");
+    if (modal) modal.classList.add("hidden");
+
+    const densitySelect = document.getElementById("map-density-select");
+    const density = densitySelect ? densitySelect.value : "MEDIUM";
+
+    if (!sameMap) {
+      this.roundNumber++;
+      this.map.generateMap(density);
+      this.cargo.spawnCubes(this.map);
+      this.view3d.rebuildObstacleMeshes();
+      this.codeEngine.log(`[BABAK BARU #${this.roundNumber}] Labirin baru dimuat. Selamat berjuang!`);
+    } else {
+      this.cargo.spawnCubes(this.map);
+      this.codeEngine.log(`[SIMULASI DIULANG] Posisi robot dan 3 kubus direset ke titik awal.`);
+    }
+
+    this.robot.resetPose(this.map.spawn.x, this.map.spawn.y, 0);
+    this.missionState = "RUNNING";
+    this.missionTime = 0.0;
+    this.codeEngine.resetMemory();
+
+    if (this.manualControlEnabled) {
+      this.updateModeIndicator("MANUAL (WASD)");
+    } else if (this.codeEngine.isRunning) {
+      this.updateModeIndicator("AUTONOMOUS");
+    } else {
+      this.updateModeIndicator("IDLE");
+    }
+
+    this.playBeep(520, 0.1, "sine");
+  }
+
+  // --- Audio Synthesis Engine ---
   initAudio() {
     if (!this.audioEnabled) return;
     if (!this.audioCtx) {
@@ -477,23 +658,6 @@ class SmorphiApp {
     } catch (e) {}
   }
 
-  playServoSound() {
-    if (!this.audioEnabled || !this.audioCtx) return;
-    try {
-      const osc = this.audioCtx.createOscillator();
-      const gain = this.audioCtx.createGain();
-      osc.type = "sawtooth";
-      osc.frequency.setValueAtTime(120, this.audioCtx.currentTime);
-      osc.frequency.linearRampToValueAtTime(320, this.audioCtx.currentTime + 0.25);
-      gain.gain.setValueAtTime(0.05, this.audioCtx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.001, this.audioCtx.currentTime + 0.35);
-      osc.connect(gain);
-      gain.connect(this.audioCtx.destination);
-      osc.start();
-      osc.stop(this.audioCtx.currentTime + 0.35);
-    } catch (e) {}
-  }
-
   playCollisionSound() {
     if (!this.audioEnabled || !this.audioCtx) return;
     try {
@@ -509,6 +673,36 @@ class SmorphiApp {
       osc.start();
       osc.stop(this.audioCtx.currentTime + 0.09);
     } catch (e) {}
+  }
+
+  playVictoryFanfare() {
+    if (!this.audioEnabled) return;
+    this.initAudio();
+    if (!this.audioCtx) return;
+
+    // Ascending celebratory fanfare: C5 (523Hz), E5 (659Hz), G5 (784Hz), C6 (1046Hz)
+    const notes = [
+      { freq: 523.25, time: 0.00, dur: 0.12 },
+      { freq: 659.25, time: 0.12, dur: 0.12 },
+      { freq: 783.99, time: 0.24, dur: 0.14 },
+      { freq: 1046.50, time: 0.38, dur: 0.35 },
+    ];
+
+    const now = this.audioCtx.currentTime;
+    notes.forEach((note) => {
+      try {
+        const osc = this.audioCtx.createOscillator();
+        const gain = this.audioCtx.createGain();
+        osc.type = "triangle";
+        osc.frequency.setValueAtTime(note.freq, now + note.time);
+        gain.gain.setValueAtTime(0.12, now + note.time);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + note.time + note.dur);
+        osc.connect(gain);
+        gain.connect(this.audioCtx.destination);
+        osc.start(now + note.time);
+        osc.stop(now + note.time + note.dur);
+      } catch (e) {}
+    });
   }
 }
 

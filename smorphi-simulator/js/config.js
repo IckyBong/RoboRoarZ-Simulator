@@ -14,13 +14,12 @@ const CONFIG = {
     DEFAULT_GOAL: { x: 4.2, y: 4.2 }, // Default target objective
   },
 
-  // Smorphi Physical Robot Specifications
+  // Smorphi Physical Robot Specifications (Single-Block Base Unit)
   ROBOT: {
-    NUM_MODULES: 4,
-    MODULE_SIZE: 0.16, // 16 cm (0.16m x 0.16m x 0.16m per modular cube)
-    MODULE_HEIGHT: 0.16, // 16 cm height in 3D
-    MODULE_MASS: 0.5, // 500 grams (0.5 kg) per module
-    TOTAL_MASS: 2.0, // Total mass: 2.0 kg
+    WIDTH: 0.170, // 170 mm width (0.17m)
+    LENGTH: 0.170, // 170 mm length (0.17m)
+    HEIGHT: 0.315, // 315 mm height in 3D (0.315m)
+    MASS: 2.20, // 2.2 kg base unit empty mass
     
     // Kinematics & Speed Limits
     MAX_LINEAR_SPEED: 0.6, // m/s (Max holonomic translation)
@@ -28,84 +27,58 @@ const CONFIG = {
     LINEAR_ACCEL: 2.5, // m/s^2
     ANGULAR_ACCEL: 8.0, // rad/s^2
     
-    // Mecanum Wheel System (16 Wheels: 4 per module)
-    WHEEL_RADIUS: 0.03, // 30 mm radius (60 mm diameter)
+    // 4-Wheel Mecanum System (1 Wheel on each chassis corner)
+    WHEEL_RADIUS: 0.030, // 30 mm radius (60 mm diameter)
     WHEEL_WIDTH: 0.025, // 25 mm width
-    WHEELS_PER_MODULE: 4,
-    TOTAL_WHEELS: 16,
-
-    // Reconfiguration / Morphing
-    MORPH_DURATION: 0.6, // seconds to complete hinge transformation
-    HINGE_RADIUS: 0.015, // hinge cylinder radius
-  },
-
-  // 7 Tetromino Morphological Shapes (Coordinates in meters relative to centroid)
-  // [dx, dy] where dx is along robot heading (Forward), dy is Lateral (Left)
-  SHAPES: {
-    // Monomino / Straight Line (1x4) - Streamlined profile (0.16m width) for narrow corridor passage
-    "I": [
-      { id: 0, x: -0.24, y: 0.0 },
-      { id: 1, x: -0.08, y: 0.0 },
-      { id: 2, x:  0.08, y: 0.0 },
-      { id: 3, x:  0.24, y: 0.0 },
-    ],
-
-    // Square (2x2) - Compact, balanced footprint (0.32m x 0.32m)
-    "O": [
-      { id: 0, x: -0.08, y: -0.08 },
-      { id: 1, x:  0.08, y: -0.08 },
-      { id: 2, x: -0.08, y:  0.08 },
-      { id: 3, x:  0.08, y:  0.08 },
-    ],
-
-    // L-Shape
-    "L": [
-      { id: 0, x: -0.16, y: -0.08 },
-      { id: 1, x:  0.00, y: -0.08 },
-      { id: 2, x:  0.16, y: -0.08 },
-      { id: 3, x: -0.16, y:  0.08 },
-    ],
-
-    // T-Shape
-    "T": [
-      { id: 0, x: -0.08, y: -0.16 },
-      { id: 1, x: -0.08, y:  0.00 },
-      { id: 2, x: -0.08, y:  0.16 },
-      { id: 3, x:  0.08, y:  0.00 },
-    ],
-
-    // Z-Shape
-    "Z": [
-      { id: 0, x:  0.08, y: -0.16 },
-      { id: 1, x:  0.08, y:  0.00 },
-      { id: 2, x: -0.08, y:  0.00 },
-      { id: 3, x: -0.08, y:  0.16 },
-    ],
-
-    // S-Shape (Mirrored Z)
-    "S": [
-      { id: 0, x: -0.08, y: -0.16 },
-      { id: 1, x: -0.08, y:  0.00 },
-      { id: 2, x:  0.08, y:  0.00 },
-      { id: 3, x:  0.08, y:  0.16 },
-    ],
-
-    // J-Shape (Mirrored L / Line Variation)
-    "J": [
-      { id: 0, x: -0.16, y:  0.08 },
-      { id: 1, x:  0.00, y:  0.08 },
-      { id: 2, x:  0.16, y:  0.08 },
-      { id: 3, x: -0.16, y: -0.08 },
+    TOTAL_WHEELS: 4,
+    WHEEL_OFFSETS: [
+      { id: "FL", lx:  0.065, ly:  0.082, rollerSign:  1 }, // Front-Left (+45°)
+      { id: "FR", lx:  0.065, ly: -0.082, rollerSign: -1 }, // Front-Right (-45°)
+      { id: "RL", lx: -0.065, ly:  0.082, rollerSign: -1 }, // Rear-Left (-45°)
+      { id: "RR", lx: -0.065, ly: -0.082, rollerSign:  1 }, // Rear-Right (+45°)
     ],
   },
 
-  // 2D LiDAR 360-Degree Emulation
+  // Front Cargo Mesh Scoop Specification
+  SCOOP: {
+    MOUNT_X: 0.085, // Mounted at front face of robot (+0.085m)
+    LENGTH: 0.140, // Extends 140 mm forward (from x=0.085m to x=0.225m)
+    OUTER_WIDTH: 0.190, // 190 mm outer width
+    INNER_WIDTH: 0.150, // 150 mm inner containment cavity width
+    HEIGHT: 0.085, // 85 mm mesh wall height
+    LIP_THICKNESS: 0.003, // 3 mm bottom retaining lip
+    GROUND_CLEARANCE: 0.004, // 4 mm clearance above floor
+    WALL_THICKNESS: 0.012, // 12 mm mesh perimeter thickness
+  },
+
+  // Cargo Cubes Physical Specifications
+  CARGO: {
+    COUNT: 3,
+    SIZE: 0.090, // 90 mm x 90 mm x 90 mm (0.09m)
+    MASS: 0.35, // 350 grams (0.35 kg) per cube
+    TOTAL_MASS: 1.05, // 1.05 kg for all 3 cubes
+    COLORS: [
+      { id: 1, name: "Amber", hex: 0xf59e0b, css: "#f59e0b", label: "01" },
+      { id: 2, name: "Cyan", hex: 0x06b6d4, css: "#06b6d4", label: "02" },
+      { id: 3, name: "Emerald", hex: 0x10b981, css: "#10b981", label: "03" },
+    ],
+    // Physics interaction parameters
+    FLOOR_FRICTION_STATIC: 0.38,
+    FLOOR_FRICTION_KINETIC: 0.28,
+    MESH_SPRING_K: 6500, // N/m
+    MESH_DAMPING_C: 140, // Ns/m
+    MESH_FRICTION: 0.22,
+    SLIP_FACTOR: 0.32, // Traction degradation multiplier
+  },
+
+  // 2D LiDAR 360-Degree Emulation (Top tier: y = 0.285m)
   LIDAR: {
     NUM_BEAMS: 360, // 360 beams (1 degree angular resolution)
     MIN_RANGE: 0.05, // 5 cm minimum detection range
     MAX_RANGE: 5.0, // 5.0 meters maximum range
     SCAN_RATE: 10, // Hz emulated scan frequency
     NOISE_SIGMA: 0.004, // 4mm Gaussian noise
+    ELEVATION_Y: 0.285, // meters in 3D
   },
 
   // 6-DOF IMU Emulation
@@ -130,15 +103,14 @@ const CONFIG = {
   },
 
   // Map Generation Navigation Profile
-  // Conservative defaults for FIXED_O — easy to recalibrate after physical measurement
   MAP_NAVIGATION: {
-    profile: "FIXED_O",        // Active navigation profile
-    shape: "O",                // Robot shape assumed during map validation
+    profile: "SINGLE_BLOCK",
+    shape: "SINGLE_BLOCK",
 
     gridResolution: 100,       // 100×100 over 5×5 m = 5 cm cells
     linearSafetyMargin: 0.04,  // 4 cm extra clearance on each side
 
-    minPassageWidth: 0.40,     // Fixed O footprint + safety margin
+    minPassageWidth: 0.40,     // Clear passage width for robot
     minTurningClearance: 0.52, // Safe turning envelope target
 
     pathSampleSpacing: 0.025,  // 2.5 cm exact SAT collision certification
@@ -150,14 +122,12 @@ const CONFIG = {
 
   // Visual Theme Colors
   COLORS: {
-    MODULES: [
-      0x06b6d4, // M1: Cyan (Master Controller)
-      0x3b82f6, // M2: Blue
-      0x8b5cf6, // M3: Violet
-      0xec4899, // M4: Pink
-    ],
     CHASSIS: 0x1e293b,
-    WHEEL: 0x334155,
+    CABIN: 0x0f172a,
+    ACCENT: 0x06b6d4,
+    SCOOP: 0x334155,
+    SCOOP_MESH: 0x475569,
+    WHEEL: 0x1e293b,
     ROLLER: 0x94a3b8,
     LASER_SAFE: 0x10b981, // Emerald Green
     LASER_WARN: 0xf59e0b, // Amber
