@@ -15,6 +15,7 @@ class ArenaMap {
     this.spawn = { x: CONFIG.ARENA.DEFAULT_SPAWN.x, y: CONFIG.ARENA.DEFAULT_SPAWN.y };
     this.densityMode = "MEDIUM";
     this.reachablePath = [];
+    this.reachableGrid = null;
     this.lastGenerationResult = null;
 
     // Seeded PRNG state
@@ -74,17 +75,60 @@ class ArenaMap {
     const cellSize = this.width / N;
     const clearRadiusSq = nav.minStartGoalClearance * nav.minStartGoalClearance;
 
+    // 4x4 stratified grid sectors covering inner arena bounds
+    const margin = 0.35;
+    const gridDim = 4;
+    const colWidth = (this.width - 2 * margin) / gridDim;
+    const rowHeight = (this.height - 2 * margin) / gridDim;
+    const sectors = [];
+    for (let r = 0; r < gridDim; r++) {
+      for (let c = 0; c < gridDim; c++) {
+        sectors.push({ c, r, count: 0 });
+      }
+    }
+
+    const minCenterDistSq = 0.45 * 0.45;
     let attempts = 0;
     let bestResult = null;
 
     while (this.obstacles.length < targetCount && attempts < nav.maxGenerationAttempts) {
       attempts++;
 
-      // Generate candidate obstacle
-      const w = 0.25 + this._random() * 0.45;
-      const h = 0.25 + this._random() * 0.45;
-      const x = 0.3 + this._random() * (this.width - 0.6 - w);
-      const y = 0.3 + this._random() * (this.height - 0.6 - h);
+      // Pick from sectors with fewest obstacles to enforce spatial dispersion
+      const sortedSectors = [...sectors].sort((a, b) => (a.count - b.count) || (this._random() - 0.5));
+      const sec = sortedSectors[Math.floor(this._random() * Math.min(4, sortedSectors.length))];
+
+      const secCx = margin + (sec.c + 0.5) * colWidth;
+      const secCy = margin + (sec.r + 0.5) * rowHeight;
+
+      // Obstacle size (mixed compact shapes: pillars, slender barriers, compact boxes)
+      const roll = this._random();
+      let w, h;
+      if (roll < 0.40) {
+        // Small pillar / column
+        w = 0.18 + this._random() * 0.12;
+        h = 0.18 + this._random() * 0.12;
+      } else if (roll < 0.70) {
+        // Slender wall / barrier
+        if (this._random() < 0.5) {
+          w = 0.30 + this._random() * 0.18;
+          h = 0.16 + this._random() * 0.08;
+        } else {
+          w = 0.16 + this._random() * 0.08;
+          h = 0.30 + this._random() * 0.18;
+        }
+      } else {
+        // Compact box
+        w = 0.22 + this._random() * 0.16;
+        h = 0.22 + this._random() * 0.16;
+      }
+
+      // Sample center around sector center with jitter across sector
+      const cxRaw = secCx + (this._random() - 0.5) * colWidth * 1.4;
+      const cyRaw = secCy + (this._random() - 0.5) * rowHeight * 1.4;
+
+      const x = Math.max(margin, Math.min(this.width - margin - w, cxRaw - w / 2));
+      const y = Math.max(margin, Math.min(this.height - margin - h, cyRaw - h / 2));
 
       const cx = x + w / 2;
       const cy = y + h / 2;
@@ -92,6 +136,18 @@ class ArenaMap {
       // Reject if too close to spawn or goal
       if (Math.hypot(cx - this.spawn.x, cy - this.spawn.y) ** 2 < clearRadiusSq) continue;
       if (Math.hypot(cx - this.goal.x, cy - this.goal.y) ** 2 < clearRadiusSq) continue;
+
+      // Reject if too close to center of existing obstacles (inter-obstacle distance >= 0.45m)
+      let tooClose = false;
+      for (const obs of this.obstacles) {
+        const ocx = obs.x + obs.w / 2;
+        const ocy = obs.y + obs.h / 2;
+        if ((cx - ocx) ** 2 + (cy - ocy) ** 2 < minCenterDistSq) {
+          tooClose = true;
+          break;
+        }
+      }
+      if (tooClose) continue;
 
       // Reject if overlaps existing obstacles (with minimum gap)
       const minGap = nav.minPassageWidth;
@@ -110,7 +166,7 @@ class ArenaMap {
       // Tentatively add
       const candidate = {
         id: `obs_${this.obstacles.length}`,
-        type: this._random() > 0.3 ? "box" : "pillar",
+        type: roll < 0.40 ? "pillar" : "box",
         x, y, w, h, rotation: 0,
       };
       this.obstacles.push(candidate);
@@ -124,6 +180,9 @@ class ArenaMap {
         continue;
       }
 
+      const sc = Math.min(gridDim - 1, Math.max(0, Math.floor((cx - margin) / colWidth)));
+      const sr = Math.min(gridDim - 1, Math.max(0, Math.floor((cy - margin) / rowHeight)));
+      sectors[sr * gridDim + sc].count++;
       bestResult = validation;
     }
 
@@ -136,8 +195,13 @@ class ArenaMap {
 
     if (bestResult && bestResult.valid) {
       this.reachablePath = bestResult.path.points;
+      const startI = Math.min(N - 1, Math.max(0, Math.floor(this.spawn.x / cellSize)));
+      const startJ = Math.min(N - 1, Math.max(0, Math.floor(this.spawn.y / cellSize)));
+      const finalGrid = this._buildCSpaceGrid(N, cellSize, inflation);
+      this.reachableGrid = this._computeReachableGrid(finalGrid, N, startI, startJ);
     } else {
       this.reachablePath = [];
+      this.reachableGrid = null;
     }
 
     this.lastGenerationResult = {
@@ -257,6 +321,76 @@ class ArenaMap {
     }
 
     return grid;
+  }
+
+  // --- Reachability Analysis (BFS flood-fill on C-Space) ---
+
+  _computeReachableGrid(grid, N, si, sj) {
+    const reachable = new Uint8Array(N * N);
+    const startIdx = sj * N + si;
+    if (grid[startIdx] === 1) return reachable;
+
+    const queue = new Int32Array(N * N);
+    let head = 0;
+    let tail = 0;
+
+    reachable[startIdx] = 1;
+    queue[tail++] = startIdx;
+
+    const dirs = [
+      [1, 0, false], [-1, 0, false], [0, 1, false], [0, -1, false],
+      [1, 1, true], [-1, 1, true], [1, -1, true], [-1, -1, true],
+    ];
+
+    while (head < tail) {
+      const currIdx = queue[head++];
+      const ci = currIdx % N;
+      const cj = (currIdx - ci) / N;
+
+      for (let d = 0; d < 8; d++) {
+        const di = dirs[d][0];
+        const dj = dirs[d][1];
+        const isDiag = dirs[d][2];
+        const ni = ci + di;
+        const nj = cj + dj;
+        if (ni < 0 || ni >= N || nj < 0 || nj >= N) continue;
+        const nIdx = nj * N + ni;
+        if (reachable[nIdx] || grid[nIdx] === 1) continue;
+
+        if (isDiag) {
+          if (grid[cj * N + ni] === 1 || grid[nj * N + ci] === 1) continue;
+        }
+
+        reachable[nIdx] = 1;
+        queue[tail++] = nIdx;
+      }
+    }
+    return reachable;
+  }
+
+  /**
+   * Check if a world point (x, y) is reachable by robot from spawn
+   * @param {number} x
+   * @param {number} y
+   * @returns {boolean}
+   */
+  isPointReachable(x, y) {
+    const nav = CONFIG.MAP_NAVIGATION;
+    const N = nav.gridResolution;
+    const cellSize = this.width / N;
+
+    if (!this.reachableGrid) {
+      const inflation = RobotGeometry.getObstacleInflation(nav.profile);
+      const grid = this._buildCSpaceGrid(N, cellSize, inflation);
+      const si = Math.min(N - 1, Math.max(0, Math.floor(this.spawn.x / cellSize)));
+      const sj = Math.min(N - 1, Math.max(0, Math.floor(this.spawn.y / cellSize)));
+      this.reachableGrid = this._computeReachableGrid(grid, N, si, sj);
+    }
+
+    const i = Math.floor(x / cellSize);
+    const j = Math.floor(y / cellSize);
+    if (i < 0 || i >= N || j < 0 || j >= N) return false;
+    return this.reachableGrid[j * N + i] === 1;
   }
 
   // --- A* Pathfinding (8-connected, no diagonal corner cutting, binary heap) ---
@@ -553,12 +687,17 @@ class ArenaMap {
 
     if (result.valid) {
       this.reachablePath = result.path.points;
+      const startI = Math.min(N - 1, Math.max(0, Math.floor(this.spawn.x / cellSize)));
+      const startJ = Math.min(N - 1, Math.max(0, Math.floor(this.spawn.y / cellSize)));
+      const finalGrid = this._buildCSpaceGrid(N, cellSize, inflation);
+      this.reachableGrid = this._computeReachableGrid(finalGrid, N, startI, startJ);
     }
   }
 
   // --- Debug UI ---
 
   _updateDebugUI() {
+    if (typeof document === "undefined") return;
     const el = document.getElementById("map-gen-debug");
     if (!el || !this.lastGenerationResult) return;
     const r = this.lastGenerationResult;

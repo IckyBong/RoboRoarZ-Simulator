@@ -97,9 +97,9 @@ const CONFIG = {
 
   // Obstacle Density Presets
   DENSITY_PRESETS: {
-    LOW: { label: "7.5% - Training Ground", density: 0.075, minObstacles: 5, maxObstacles: 8 },
-    MEDIUM: { label: "15.0% - RoboRoarZ Standard", density: 0.15, minObstacles: 12, maxObstacles: 18, forceCorridors: true },
-    HIGH: { label: "28.0% - Dense Maze & Tight Chokepoints", density: 0.28, minObstacles: 22, maxObstacles: 30, forceCorridors: true },
+    LOW: { label: "7.5% - Training Ground", density: 0.075, minObstacles: 8, maxObstacles: 12 },
+    MEDIUM: { label: "15.0% - RoboRoarZ Standard", density: 0.15, minObstacles: 14, maxObstacles: 18, forceCorridors: true },
+    HIGH: { label: "28.0% - Dense Maze & Tight Chokepoints", density: 0.28, minObstacles: 18, maxObstacles: 22, forceCorridors: true },
   },
 
   // Map Generation Navigation Profile
@@ -110,7 +110,7 @@ const CONFIG = {
     gridResolution: 100,       // 100×100 over 5×5 m = 5 cm cells
     linearSafetyMargin: 0.04,  // 4 cm extra clearance on each side
 
-    minPassageWidth: 0.40,     // Clear passage width for robot
+    minPassageWidth: 0.36,     // Clear passage width for robot (single block width 0.17m, scoop 0.19m)
     minTurningClearance: 0.52, // Safe turning envelope target
 
     pathSampleSpacing: 0.025,  // 2.5 cm exact SAT collision certification

@@ -185,42 +185,90 @@ class CargoManager {
   }
 
   /**
-   * Spawns cubes deterministically at safe open waypoints along the verified A* path
-   * without altering the maze layout or obstacle generator.
+   * Spawns cubes with dispersed random sampling across arena bounds
+   * guaranteeing reachability and spacing without locking to the direct path.
    * @param {ArenaMap} map
    */
   spawnCubes(map) {
-    const path = (map && map.reachablePath && map.reachablePath.length > 5) ? map.reachablePath : null;
+    const arenaW = map ? map.width : CONFIG.ARENA.WIDTH;
+    const arenaH = map ? map.height : CONFIG.ARENA.HEIGHT;
+    const spawnX = (map && map.spawn) ? map.spawn.x : CONFIG.ARENA.DEFAULT_SPAWN.x;
+    const spawnY = (map && map.spawn) ? map.spawn.y : CONFIG.ARENA.DEFAULT_SPAWN.y;
+    const goalX = (map && map.goal) ? map.goal.x : CONFIG.ARENA.DEFAULT_GOAL.x;
+    const goalY = (map && map.goal) ? map.goal.y : CONFIG.ARENA.DEFAULT_GOAL.y;
+    const obstacles = (map && map.obstacles) ? map.obstacles : [];
 
-    if (path) {
-      const len = path.length;
-      // Waypoint indices along path
-      const idx1 = Math.floor(len * 0.25);
-      const idx2 = Math.floor(len * 0.55);
-      const idx3 = Math.floor(len * 0.80);
+    const placed = [];
+    const minSpawnDistSq = 0.9 * 0.9;
+    const minGoalDistSq = 0.8 * 0.8;
+    const minInterCubeDistSq = 1.0 * 1.0;
+    const minObsClearance = 0.22;
+    const margin = 0.6;
 
-      const p1 = path[idx1];
-      const p2 = path[idx2];
-      const p3 = path[idx3];
+    const distToBox = (px, py, rx, ry, rw, rh) => {
+      const dx = Math.max(rx - px, 0, px - (rx + rw));
+      const dy = Math.max(ry - py, 0, py - (ry + rh));
+      return Math.hypot(dx, dy);
+    };
 
-      this.cubes[0].reset(p1.x, p1.y);
-      this.cubes[1].reset(p2.x, p2.y);
-      this.cubes[2].reset(p3.x, p3.y);
-    } else {
-      // Fallback default safe points
-      const fallbacks = [
-        { x: 1.8, y: 1.4 },
-        { x: 2.5, y: 3.2 },
-        { x: 3.8, y: 2.2 },
-      ];
+    for (let i = 0; i < this.cubes.length; i++) {
+      let chosenX = null;
+      let chosenY = null;
 
-      for (let i = 0; i < 3; i++) {
-        let pt = fallbacks[i];
-        // Ensure within bounds
-        pt.x = Math.max(0.5, Math.min(map.width - 0.5, pt.x));
-        pt.y = Math.max(0.5, Math.min(map.height - 0.5, pt.y));
-        this.cubes[i].reset(pt.x, pt.y);
+      // ponytail: fixed 200 attempts per cube; add adaptive relaxation if density > 30%
+      for (let attempt = 0; attempt < 200; attempt++) {
+        const cx = margin + Math.random() * (arenaW - 2 * margin);
+        const cy = margin + Math.random() * (arenaH - 2 * margin);
+
+        if ((cx - spawnX) ** 2 + (cy - spawnY) ** 2 < minSpawnDistSq) continue;
+        if ((cx - goalX) ** 2 + (cy - goalY) ** 2 < minGoalDistSq) continue;
+
+        let hitObs = false;
+        for (const obs of obstacles) {
+          if (distToBox(cx, cy, obs.x, obs.y, obs.w, obs.h) <= minObsClearance) {
+            hitObs = true;
+            break;
+          }
+        }
+        if (hitObs) continue;
+
+        let tooClose = false;
+        for (const p of placed) {
+          if ((cx - p.x) ** 2 + (cy - p.y) ** 2 < minInterCubeDistSq) {
+            tooClose = true;
+            break;
+          }
+        }
+        if (tooClose) continue;
+
+        if (map && typeof map.isPointReachable === "function") {
+          if (!map.isPointReachable(cx, cy)) continue;
+        }
+
+        chosenX = cx;
+        chosenY = cy;
+        break;
       }
+
+      if (chosenX === null) {
+        if (map && map.reachablePath && map.reachablePath.length > 5) {
+          const frac = (i + 1) / (this.cubes.length + 1);
+          const p = map.reachablePath[Math.floor(map.reachablePath.length * frac)];
+          chosenX = p.x;
+          chosenY = p.y;
+        } else {
+          const fallbacks = [
+            { x: 1.8, y: 1.4 },
+            { x: 2.5, y: 3.2 },
+            { x: 3.8, y: 2.2 },
+          ];
+          chosenX = fallbacks[i % fallbacks.length].x;
+          chosenY = fallbacks[i % fallbacks.length].y;
+        }
+      }
+
+      this.cubes[i].reset(chosenX, chosenY);
+      placed.push({ x: chosenX, y: chosenY });
     }
   }
 
