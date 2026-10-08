@@ -120,6 +120,21 @@ const CONFIG = {
     enableSeededGeneration: true,
   },
 
+  // Fog of War (line-of-sight exploration reveal)
+  FOG: {
+    ENABLED: true,
+    HIDE_UNSEEN: true,   // hide obstacles & cubes until their cell is explored
+    REVEAL_RADIUS: 0.45, // meters revealed around robot each tick
+    RAY_STEP: 0.04,      // ray-march granularity along LiDAR beams
+    START_BLOB: 0.55,    // initial revealed disc at spawn
+  },
+
+  // Checkpoints (AprilTag pads under each cargo cube)
+  CHECKPOINT: {
+    SCAN_RADIUS: 0.60, // meters proximity needed to scan a tag
+    TAG_SIZE: 0.16,    // meters, floor tag footprint
+  },
+
   // Visual Theme Colors
   COLORS: {
     CHASSIS: 0x1e293b,

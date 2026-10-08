@@ -5,6 +5,8 @@ global.CONFIG = require("./js/config.js");
 global.RobotGeometry = require("./js/geometry.js");
 const { ArenaMap } = require("./js/map.js");
 const { CargoManager } = require("./js/cargo.js");
+const { FogOfWar } = require("./js/fog.js");
+const { CheckpointManager } = require("./js/checkpoints.js");
 
 console.log("Running self-check tests for dispersed obstacle map generation & dynamic cargo spawning...");
 
@@ -111,3 +113,70 @@ assert(map.lastGenerationResult.valid);
 assert(map.obstacles.length >= 18 && map.obstacles.length <= 22);
 
 console.log("All assertions passed successfully! (20 maps verified)");
+
+// ============================================================
+// Fog of War & Checkpoint self-checks
+// ============================================================
+console.log("\nRunning fog-of-war & checkpoint tests...");
+
+// --- Fog: reveal mask ---
+const fog = new FogOfWar(5.0, 5.0, 100);
+assert.strictEqual(fog.isExplored(0.5, 0.5), false, "Fog should start fully unexplored");
+fog.revealDisk(0.5, 0.5, 0.3);
+assert(fog.isExplored(0.5, 0.5), "Center of reveal disc must be explored");
+assert(!fog.isExplored(4.0, 4.0), "Far corner must stay fogged");
+assert(fog.dirty, "Revealing must raise the dirty flag for texture repaint");
+
+// --- Fog: line-of-sight along a ray stops at the hit point ---
+fog.reset();
+assert.strictEqual(fog.revealedCount, 0, "Reset must clear the mask");
+fog.revealFromRays(0.5, 0.5, [{ x: 1.5, y: 0.5 }]);
+assert(fog.isExplored(1.0, 0.5), "Cells along the ray up to the hit must be explored");
+assert(!fog.isExplored(3.0, 0.5), "Cells beyond the LiDAR hit must remain fogged");
+
+// --- Checkpoints: placed at cube spawn origins, chained reveal ---
+cargo.spawnCubes(map);
+const cpMgr = new CheckpointManager();
+cpMgr.syncToCargo(cargo);
+assert.strictEqual(cpMgr.checkpoints.length, 3, "Expected one checkpoint per cargo cube");
+for (let i = 0; i < 3; i++) {
+  const cp = cpMgr.checkpoints[i];
+  assert.strictEqual(cp.x, cargo.cubes[i].spawnX, `CP ${cp.id} x must match cube spawn x`);
+  assert.strictEqual(cp.y, cargo.cubes[i].spawnY, `CP ${cp.id} y must match cube spawn y`);
+  assert.strictEqual(cp.discovered, false, `CP ${cp.id} must start undiscovered`);
+  assert.strictEqual(cp.isNext, i === 0, `Only the first checkpoint starts flagged as next`);
+}
+
+const probe = { x: 0, y: 0 };
+probe.x = cpMgr.checkpoints[0].x; probe.y = cpMgr.checkpoints[0].y;
+let discoveredEvents = 0;
+cpMgr.onDiscover = () => { discoveredEvents++; };
+cpMgr.update(1 / 60, probe, map);
+assert(cpMgr.checkpoints[0].discovered, "CP-1 must be discovered on approach");
+assert.strictEqual(cpMgr.revealedTarget.x, cpMgr.checkpoints[1].x, "CP-1 must reveal CP-2 coordinate");
+
+probe.x = cpMgr.checkpoints[1].x; probe.y = cpMgr.checkpoints[1].y;
+cpMgr.update(1 / 60, probe, map);
+assert(cpMgr.checkpoints[1].discovered, "CP-2 must be discovered on approach");
+assert.strictEqual(cpMgr.revealedTarget.x, cpMgr.checkpoints[2].x, "CP-2 must reveal CP-3 coordinate");
+
+probe.x = cpMgr.checkpoints[2].x; probe.y = cpMgr.checkpoints[2].y;
+cpMgr.update(1 / 60, probe, map);
+assert(cpMgr.checkpoints[2].discovered, "CP-3 must be discovered on approach");
+assert.strictEqual(cpMgr.revealedTarget.label, "FINISH", "Last checkpoint must reveal the finish point");
+assert.strictEqual(cpMgr.revealedTarget.x, map.goal.x, "Finish target x must equal arena goal");
+assert.strictEqual(discoveredEvents, 3, "Exactly three discovery events expected");
+
+// --- Checkpoints: re-sync on respawn clears discovered state ---
+cpMgr.syncToCargo(cargo);
+assert.strictEqual(cpMgr.revealedTarget, null, "Re-sync must clear the revealed target");
+assert(cpMgr.checkpoints.every(c => !c.discovered), "Re-sync must reset all discovered flags");
+
+// --- Checkpoint data exposed to scripts ---
+const cpData = cpMgr.getScriptData();
+assert.strictEqual(cpData.list.length, 3);
+assert.strictEqual(cpData.discoveredCount, 0);
+assert.strictEqual(cpData.navTarget, null);
+
+console.log("Fog-of-war & checkpoint assertions passed successfully!");
+

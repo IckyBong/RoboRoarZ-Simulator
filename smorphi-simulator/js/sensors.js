@@ -245,7 +245,7 @@ class SensorSuite {
   /**
    * Create the user-facing sensors input object for the Code Injection Script
    */
-  getScriptInput(robot) {
+  getScriptInput(robot, checkpointManager = null) {
     const ranges = this.lidarRanges;
 
     // Helper functions on LiDAR object for clean user scripting
@@ -331,6 +331,10 @@ class SensorSuite {
       },
     });
 
+    const cpData = checkpointManager
+      ? checkpointManager.getScriptData()
+      : { list: [], navTarget: null, discoveredCount: 0, total: 0 };
+
     return {
       lidar: lidarProxy,
       imu: { ...this.imu },
@@ -341,6 +345,9 @@ class SensorSuite {
       isMorphing: false,
       target: { ...this.target },
       collision: robot.inCollision,
+      checkpoints: cpData.list,
+      navTarget: cpData.navTarget,
+      discoveredCheckpoints: cpData.discoveredCount,
     };
   }
 }

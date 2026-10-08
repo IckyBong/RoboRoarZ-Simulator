@@ -18,6 +18,10 @@ class CargoCube {
     this.y = y;
     this.theta = 0;
 
+    // Spawn origin (checkpoint pad location stays here after the box is dragged)
+    this.spawnX = x;
+    this.spawnY = y;
+
     // Velocities
     this.vx = 0.0;
     this.vy = 0.0;
@@ -46,6 +50,8 @@ class CargoCube {
   reset(x, y) {
     this.x = x;
     this.y = y;
+    this.spawnX = x;
+    this.spawnY = y;
     this.theta = 0;
     this.vx = 0;
     this.vy = 0;

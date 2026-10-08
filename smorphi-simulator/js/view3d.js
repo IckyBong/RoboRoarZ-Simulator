@@ -7,9 +7,11 @@
  */
 
 class Viewport3D {
-  constructor(containerId, arenaMap) {
+  constructor(containerId, arenaMap, fogOfWar = null, checkpointManager = null) {
     this.container = document.getElementById(containerId);
     this.map = arenaMap;
+    this.fog = fogOfWar;
+    this.checkpoints = checkpointManager;
 
     this.scene = null;
     this.camera = null;
@@ -30,6 +32,15 @@ class Viewport3D {
     this.trajectoryLine = null;
     this.goalGroup = null;
     this.cargoMeshes = [];
+
+    // Fog of war & checkpoints
+    this.fogMesh = null;
+    this.fogTexture = null;
+    this.fogCanvas = null;
+    this.fogCtx = null;
+    this.checkpointMeshes = [];
+    this.navBeacon = null;
+    this.navBeaconCone = null;
 
     // Visualization toggles
     this.showLidarBeams = true;
@@ -98,7 +109,12 @@ class Viewport3D {
     // 12. Obstacles
     this.rebuildObstacleMeshes();
 
-    // 13. Resize listener
+    // 13. Fog of War overlay + Checkpoint pads
+    this.buildFogLayer();
+    this.buildCheckpointMarkers();
+    this.buildNavBeacon();
+
+    // 14. Resize listener
     window.addEventListener("resize", () => this.onWindowResize());
   }
 
@@ -539,6 +555,204 @@ class Viewport3D {
     this.scene.add(this.goalGroup);
   }
 
+  // ==========================================================
+  // FOG OF WAR
+  // ==========================================================
+
+  buildFogLayer() {
+    if (!this.fog) return;
+    const W = this.map.width;
+    const H = this.map.height;
+
+    this.fogCanvas = document.createElement("canvas");
+    this.fogCanvas.width = this.fog.N;
+    this.fogCanvas.height = this.fog.N;
+    this.fogCtx = this.fogCanvas.getContext("2d");
+
+    this.fogTexture = new THREE.CanvasTexture(this.fogCanvas);
+    this.fogTexture.minFilter = THREE.LinearFilter;
+    this.fogTexture.magFilter = THREE.LinearFilter;
+
+    const geo = new THREE.PlaneGeometry(W, H);
+    const mat = new THREE.MeshBasicMaterial({
+      map: this.fogTexture,
+      transparent: true,
+      depthWrite: false,
+    });
+
+    this.fogMesh = new THREE.Mesh(geo, mat);
+    this.fogMesh.rotation.x = -Math.PI / 2;
+    this.fogMesh.position.set(W / 2, 0.03, H / 2);
+    this.fogMesh.renderOrder = 5;
+    this.fogMesh.visible = CONFIG.FOG.ENABLED;
+    this.scene.add(this.fogMesh);
+
+    this.paintFog();
+  }
+
+  /** Rebuild the fog CanvasTexture from the exploration mask (dirty-flag driven). */
+  paintFog() {
+    if (!this.fogCtx || !this.fog) return;
+    const N = this.fog.N;
+    const mask = this.fog.mask;
+    const img = this.fogCtx.createImageData(N, N);
+    const d = img.data;
+    for (let k = 0; k < mask.length; k++) {
+      const o = k * 4;
+      d[o] = 9;
+      d[o + 1] = 13;
+      d[o + 2] = 22;
+      d[o + 3] = mask[k] ? 0 : 235;
+    }
+    this.fogCtx.putImageData(img, 0, 0);
+    if (this.fogTexture) this.fogTexture.needsUpdate = true;
+    this.fog.dirty = false;
+  }
+
+  // ==========================================================
+  // CHECKPOINTS (AprilTag pads)
+  // ==========================================================
+
+  makeTagCanvas(cp) {
+    const S = 128;
+    const c = document.createElement("canvas");
+    c.width = S;
+    c.height = S;
+    const ctx = c.getContext("2d");
+
+    // White field + thick black border (AprilTag look)
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, S, S);
+    ctx.fillStyle = "#000000";
+    ctx.fillRect(8, 8, S - 16, S - 16);
+
+    // Deterministic 6x6 inner data grid unique per checkpoint id
+    const g = 6;
+    const pad = 22;
+    const cell = (S - 2 * pad) / g;
+    let seed = (cp.id * 2654435761) >>> 0;
+    const rand = () => {
+      seed ^= seed << 13; seed >>>= 0;
+      seed ^= seed >>> 17;
+      seed ^= seed << 5; seed >>>= 0;
+      return seed / 4294967296;
+    };
+    ctx.fillStyle = "#ffffff";
+    for (let r = 0; r < g; r++) {
+      for (let col = 0; col < g; col++) {
+        if (rand() < 0.5) ctx.fillRect(pad + col * cell, pad + r * cell, cell, cell);
+      }
+    }
+
+    // Colored orientation corners (cube color) so each pad reads at a glance
+    ctx.fillStyle = cp.colorCss;
+    ctx.fillRect(8, 8, 16, 16);
+    ctx.fillRect(S - 24, 8, 16, 16);
+    ctx.fillRect(8, S - 24, 16, 16);
+
+    return c;
+  }
+
+  makeLabelSprite(text, colorCss) {
+    const c = document.createElement("canvas");
+    c.width = 256;
+    c.height = 64;
+    const ctx = c.getContext("2d");
+    ctx.fillStyle = "rgba(2, 6, 23, 0.85)";
+    ctx.fillRect(2, 2, 252, 60);
+    ctx.strokeStyle = colorCss;
+    ctx.lineWidth = 4;
+    ctx.strokeRect(2, 2, 252, 60);
+    ctx.fillStyle = colorCss;
+    ctx.font = "bold 34px monospace";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(text, 128, 34);
+
+    const tex = new THREE.CanvasTexture(c);
+    tex.minFilter = THREE.LinearFilter;
+    const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false });
+    const sprite = new THREE.Sprite(mat);
+    sprite.scale.set(0.36, 0.09, 1);
+    return sprite;
+  }
+
+  buildCheckpointMarkers() {
+    if (!this.checkpoints) return;
+    const tagSize = CONFIG.CHECKPOINT.TAG_SIZE;
+
+    for (const cp of this.checkpoints.checkpoints) {
+      const group = new THREE.Group();
+      group.position.set(cp.x, 0, cp.y);
+
+      // 1. Floor AprilTag
+      const tagTex = new THREE.CanvasTexture(this.makeTagCanvas(cp));
+      const tagMat = new THREE.MeshBasicMaterial({ map: tagTex, transparent: true });
+      const tag = new THREE.Mesh(new THREE.PlaneGeometry(tagSize, tagSize), tagMat);
+      tag.rotation.x = -Math.PI / 2;
+      tag.position.y = 0.004;
+      group.add(tag);
+
+      // 2. Glowing colored ring
+      const ring = new THREE.Mesh(
+        new THREE.RingGeometry(tagSize * 0.56, tagSize * 0.70, 32),
+        new THREE.MeshBasicMaterial({ color: cp.colorHex, side: THREE.DoubleSide, transparent: true, opacity: 0.8 })
+      );
+      ring.rotation.x = -Math.PI / 2;
+      ring.position.y = 0.006;
+      group.add(ring);
+
+      // 3. Vertical light beam
+      const beam = new THREE.Mesh(
+        new THREE.CylinderGeometry(tagSize * 0.16, tagSize * 0.16, 0.70, 12, 1, true),
+        new THREE.MeshBasicMaterial({ color: cp.colorHex, transparent: true, opacity: 0.25, side: THREE.DoubleSide, depthWrite: false })
+      );
+      beam.position.y = 0.35;
+      group.add(beam);
+
+      // 4. Floating label
+      const label = this.makeLabelSprite(cp.label, cp.colorCss);
+      label.position.y = 0.62;
+      group.add(label);
+
+      this.scene.add(group);
+      this.checkpointMeshes.push({ group, ring, beam, cp });
+    }
+  }
+
+  rebuildCheckpointMarkers() {
+    for (const m of this.checkpointMeshes) this.scene.remove(m.group);
+    this.checkpointMeshes = [];
+    this.buildCheckpointMarkers();
+  }
+
+  buildNavBeacon() {
+    this.navBeacon = new THREE.Group();
+
+    const ring = new THREE.Mesh(
+      new THREE.RingGeometry(0.14, 0.20, 32),
+      new THREE.MeshBasicMaterial({ color: 0x22d3ee, side: THREE.DoubleSide, transparent: true, opacity: 0.9 })
+    );
+    ring.rotation.x = -Math.PI / 2;
+    ring.position.y = 0.02;
+    this.navBeacon.add(ring);
+
+    this.navBeaconCone = new THREE.Mesh(
+      new THREE.ConeGeometry(0.075, 0.22, 4),
+      new THREE.MeshBasicMaterial({ color: 0x22d3ee, transparent: true, opacity: 0.85 })
+    );
+    this.navBeaconCone.position.y = 0.45;
+    this.navBeaconCone.rotation.x = Math.PI;
+    this.navBeacon.add(this.navBeaconCone);
+
+    const label = this.makeLabelSprite("NEXT", "#22d3ee");
+    label.position.y = 0.72;
+    this.navBeacon.add(label);
+
+    this.navBeacon.visible = false;
+    this.scene.add(this.navBeacon);
+  }
+
   rebuildObstacleMeshes() {
     for (const mesh of this.obstacleMeshes) {
       this.scene.remove(mesh);
@@ -655,13 +869,76 @@ class Viewport3D {
       }
     }
 
-    // 8. Camera
+    // 8. Fog of War, checkpoint animation, dynamic visibility
+    this.updateFogOfWar(cargoManager, dt);
+
+    // 9. Camera
     this.updateCamera(robot);
 
-    // 9. Render WebGL Scene
+    // 10. Render WebGL Scene
     if (this.renderer && this.scene && this.camera) {
       this.renderer.render(this.scene, this.camera);
     }
+  }
+
+  updateFogOfWar(cargoManager, dt) {
+    if (!this.fog) return;
+
+    this.fogMesh.visible = CONFIG.FOG.ENABLED;
+    if (CONFIG.FOG.ENABLED && this.fog.dirty) {
+      this.paintFog();
+    }
+
+    const t = performance.now() * 0.001;
+    const exploreAll = !CONFIG.FOG.ENABLED || !CONFIG.FOG.HIDE_UNSEEN;
+
+    // Obstacles
+    for (const mesh of this.obstacleMeshes) {
+      mesh.visible = exploreAll || this.fog.isExplored(mesh.position.x, mesh.position.z);
+    }
+
+    // Cargo cubes
+    if (cargoManager && cargoManager.cubes) {
+      for (let i = 0; i < this.cargoMeshes.length; i++) {
+        const cube = cargoManager.cubes[i];
+        if (cube) this.cargoMeshes[i].visible = exploreAll || this.fog.isExplored(cube.x, cube.y);
+      }
+    }
+
+    // Checkpoint pads + pulse animation
+    for (const m of this.checkpointMeshes) {
+      m.group.visible = exploreAll || this.fog.isExplored(m.cp.x, m.cp.y);
+      const col = m.cp.discovered ? 0x22c55e : m.cp.colorHex;
+      m.ring.material.color.setHex(col);
+      m.beam.material.color.setHex(col);
+      const pulse = 0.5 + 0.5 * Math.sin(t * 3 + m.cp.id);
+      m.ring.material.opacity = 0.45 + 0.45 * pulse;
+      m.ring.scale.setScalar(1 + 0.06 * pulse);
+      m.beam.material.opacity = 0.15 + 0.20 * pulse;
+    }
+
+    // Revealed "NEXT" navigation beacon
+    if (this.navBeacon) {
+      const target = this.checkpoints ? this.checkpoints.revealedTarget : null;
+      if (target) {
+        this.navBeacon.visible = true;
+        this.navBeacon.position.set(target.x, 0, target.y);
+        this.navBeacon.rotation.y += 1.5 * dt;
+        this.navBeaconCone.position.y = 0.45 + Math.sin(t * 4) * 0.05;
+      } else {
+        this.navBeacon.visible = false;
+      }
+    }
+  }
+
+  /** Reset exploration + rebuild pads after a map/cargo reset. */
+  resetExploration() {
+    if (this.fog) {
+      this.fog.reset();
+      this.fog.revealDisk(this.map.spawn.x, this.map.spawn.y, CONFIG.FOG.START_BLOB);
+    }
+    this.rebuildCheckpointMarkers();
+    this.paintFog();
   }
 
   updateLidarVisualization(points, robot) {

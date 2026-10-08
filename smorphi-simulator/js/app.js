@@ -34,13 +34,19 @@ class SmorphiApp {
     this.cargo = new CargoManager();
     this.cargo.spawnCubes(this.map);
 
+    // Fog of War + Checkpoints (built before the 3D viewport renders them)
+    this.fog = new FogOfWar(this.map.width, this.map.height, CONFIG.MAP_NAVIGATION.gridResolution);
+    this.fog.revealDisk(this.map.spawn.x, this.map.spawn.y, CONFIG.FOG.START_BLOB);
+    this.checkpoints = new CheckpointManager();
+    this.checkpoints.syncToCargo(this.cargo);
+
     this.robot = new SmorphiRobot(this.map.spawn.x, this.map.spawn.y, 0);
     this.physics = new PhysicsEngine(this.map);
     this.sensors = new SensorSuite(this.map);
     this.codeEngine = new CodeEngine();
 
     // DOM & Viewports
-    this.view3d = new Viewport3D("viewport-3d", this.map);
+    this.view3d = new Viewport3D("viewport-3d", this.map, this.fog, this.checkpoints);
     this.telemetry = new TelemetryDashboard("lidar-radar-canvas");
 
     // Audio Synthesizer (Web Audio API)
@@ -61,6 +67,15 @@ class SmorphiApp {
     // Initial sensor scan & telemetry update
     this.sensors.update(this.robot, this.cargo, { state: this.missionState, time: this.missionTime, round: this.roundNumber });
     this.telemetry.update(this.robot, this.sensors, this.map);
+    this.fog.reveal(this.robot, this.sensors);
+
+    // Checkpoint discovery feedback
+    this.checkpoints.onDiscover = (cp, target) => {
+      const tx = target.x.toFixed(2);
+      const ty = target.y.toFixed(2);
+      this.codeEngine.log(`[CHECKPOINT] ${cp.label} terpindai! Target berikutnya: ${target.label} @ (${tx}, ${ty})`);
+      this.playBeep(880, 0.14, "sine");
+    };
 
     // Initial code compilation of default template
     if (this.editor) {
@@ -288,6 +303,13 @@ class SmorphiApp {
       });
     }
 
+    const toggleFog = document.getElementById("toggle-fog-of-war");
+    if (toggleFog) {
+      toggleFog.addEventListener("change", (e) => {
+        CONFIG.FOG.ENABLED = e.target.checked;
+      });
+    }
+
     // 5. Manual Teleop Mode Toggle
     const btnTeleop = document.getElementById("btn-manual-teleop");
     if (btnTeleop) {
@@ -314,6 +336,7 @@ class SmorphiApp {
     if (btnRespawnCubes) {
       btnRespawnCubes.addEventListener("click", () => {
         this.cargo.spawnCubes(this.map);
+        this.resetExploration();
         this.codeEngine.log("Cargo Cubes respawned at safe waypoints.");
         this.playBeep(520, 0.1, "sine");
       });
@@ -467,9 +490,13 @@ class SmorphiApp {
     // 2. Read Sensors before script execution
     this.sensors.update(this.robot, this.cargo, { state: this.missionState, time: this.missionTime, round: this.roundNumber });
 
+    // 2b. Fog exploration + checkpoint scanning
+    this.fog.reveal(this.robot, this.sensors);
+    this.checkpoints.update(dt, this.robot, this.map);
+
     // 3. Execute Autonomous Script (if running and mission not finished)
     if (this.codeEngine.isRunning) {
-      const scriptSensors = this.sensors.getScriptInput(this.robot);
+      const scriptSensors = this.sensors.getScriptInput(this.robot, this.checkpoints);
       this.codeEngine.executeTick(scriptSensors, this.robot, dt);
 
       if (this.codeEngine.hasError) {
@@ -613,6 +640,7 @@ class SmorphiApp {
     }
 
     this.robot.resetPose(this.map.spawn.x, this.map.spawn.y, 0);
+    this.resetExploration();
     this.missionState = "RUNNING";
     this.missionTime = 0.0;
     this.codeEngine.resetMemory();
@@ -626,6 +654,14 @@ class SmorphiApp {
     }
 
     this.playBeep(520, 0.1, "sine");
+  }
+
+  /**
+   * Clear fog exploration and re-sync checkpoints to the freshly spawned cubes.
+   */
+  resetExploration() {
+    this.checkpoints.syncToCargo(this.cargo);
+    this.view3d.resetExploration();
   }
 
   // --- Audio Synthesis Engine ---

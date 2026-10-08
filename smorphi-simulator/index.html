@@ -141,6 +141,10 @@
           <input type="checkbox" id="toggle-audio-sfx" checked class="rounded bg-slate-800 border-slate-700 text-cyan-500 focus:ring-0">
           <span class="text-[11px]">SFX</span>
         </label>
+        <label class="flex items-center space-x-1 text-xs text-slate-300 cursor-pointer hover:text-white" title="Fog of War (exploration)">
+          <input type="checkbox" id="toggle-fog-of-war" checked class="rounded bg-slate-800 border-slate-700 text-cyan-500 focus:ring-0">
+          <span class="text-[11px]">Fog</span>
+        </label>
       </div>
 
       <!-- Top Right Overlay: Active Cargo Payload Badge -->
@@ -525,6 +529,10 @@
               <p class="text-slate-400 text-[10px]">.count (0-3), .totalMassKg, .hasContact, .cubes array.</p>
             </div>
             <div class="p-2 bg-slate-900 rounded border border-slate-800">
+              <span class="text-amber-400 font-bold">sensors.checkpoints / sensors.navTarget</span>
+              <p class="text-slate-400 text-[10px]">Checkpoint AprilTag di bawah kubus. .navTarget = koordinat target berikutnya setelah tag terpindai (null sebelum pindai pertama).</p>
+            </div>
+            <div class="p-2 bg-slate-900 rounded border border-slate-800">
               <span class="text-cyan-400 font-bold">sensors.lidar.getFront(deg)</span>
               <p class="text-slate-400 text-[10px]">Jarak minimum rintangan depan [-deg, +deg].</p>
             </div>
@@ -580,6 +588,8 @@
   <script src="js/smorphi.js"></script>
   <script src="js/cargo.js"></script>
   <script src="js/map.js"></script>
+  <script src="js/fog.js"></script>
+  <script src="js/checkpoints.js"></script>
   <script src="js/physics.js"></script>
   <script src="js/sensors.js"></script>
   <script src="js/codeEngine.js"></script>

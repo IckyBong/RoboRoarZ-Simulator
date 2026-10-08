@@ -42,6 +42,13 @@ Simulator robotika interaktif berbasis Web (WebGL / Three.js, Canvas, Tailwind C
 - **Sistem Collision Detection**:
   * Separating Axis Theorem (SAT) untuk 4 bounding box modular Smorphi terhadap dinding dan rintangan.
   * Respons kontak lentur (*inelastic wall sliding*) sehingga robot dapat meluncur di sepanjang permukaan dinding tanpa tembus (*anti-tunneling*).
+- **Fog of War (Eksplorasi Line-of-Sight)**:
+  * Arena tertutup kabut sampai robot benar-benar melihatnya. Mask eksplorasi di-reveal mengikuti 360 berkas LiDAR; dinding menghalangi pandangan sehingga area di balik rintangan tetap gelap.
+  * Rintangan dan kubus kargo disembunyikan hingga selnya terjelajah (dapat dimatikan lewat toggle **Fog**).
+- **Checkpoint AprilTag (Penanda di Bawah Kubus)**:
+  * Setiap kubus kargo duduk di atas sebuah *checkpoint pad* lantai bertekstur AprilTag berwarna sesuai kubus, lengkap dengan cincin menyala, berkas cahaya vertikal, dan label `CP-n`.
+  * Saat robot mendekat dengan *line-of-sight* bersih, tag terpindai dan langsung membuka koordinat checkpoint berikutnya (checkpoint terakhir membuka titik finish). Beacon biru **NEXT** menandai target hasil pindaian.
+  * Koordinat hasil pindaian tersedia untuk script otonom lewat `sensors.navTarget` dan `sensors.checkpoints` (perilaku navigasi sepenuhnya diserahkan ke tim software).
 
 ---
 
